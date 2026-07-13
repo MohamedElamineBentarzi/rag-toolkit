@@ -12,11 +12,13 @@ import uuid
 import pytest
 
 from rag_toolkit.chunking.base import Chunker
-from rag_toolkit.core.contracts import Chunk, Document, ScoredChunk, Source
+from rag_toolkit.core.contracts import Chunk, Document, Query, ScoredChunk, Source
 from rag_toolkit.core.errors import StorageError
 from rag_toolkit.embedding.base import Embedder
 from rag_toolkit.ingestion.parsers.base import Parser
+from rag_toolkit.retrieval.base import Retriever
 from rag_toolkit.storage.base import BlobStore
+from rag_toolkit.storage.lexical_index import LexicalIndex
 from rag_toolkit.storage.vector_store import VectorStore
 
 
@@ -186,3 +188,74 @@ def assert_vector_store_contract(store: VectorStore, dimensions: int = 8) -> Non
 
     # 6. Identity is deterministic.
     assert store.fingerprint() == store.fingerprint()
+
+
+def _corpus() -> list[Chunk]:
+    texts = [
+        "the quick brown fox jumps over the lazy dog",
+        "a quick brown hare races across the field",
+        "financial results for the third quarter of the year",
+    ]
+    return [
+        Chunk(id=f"d:{i}", doc_id="d", text=t, index=i,
+              char_start=i, char_end=i + 1, page_start=1, page_end=1)
+        for i, t in enumerate(texts)
+    ]
+
+
+def assert_lexical_index_contract(index: LexicalIndex) -> None:
+    """Every LexicalIndex (bm25, your own) must behave like this."""
+    chunks = _corpus()
+
+    # 1. Empty index / no-term query ⇒ no results.
+    assert index.search("anything", k=5) == []
+
+    index.add(chunks)
+
+    # 2. Term overlap ranks a matching doc first; results are ScoredChunks
+    #    with descending scores and intact provenance.
+    results = index.search("quick brown fox", k=3)
+    assert results and isinstance(results[0], ScoredChunk)
+    assert results[0].chunk.id == "d:0"
+    assert [r.score for r in results] == sorted(
+        (r.score for r in results), reverse=True
+    )
+    assert results[0].chunk.page_start == 1
+
+    # 3. A term absent from the corpus scores nothing.
+    assert index.search("zzzznonexistent", k=5) == []
+
+    # 4. k respected; re-adding the same ids doesn't duplicate.
+    index.add(chunks)
+    assert len(index.search("quick", k=10)) <= 3
+
+    # 5. Filters narrow the set.
+    filtered = index.search("quarter", k=10, filters={"index": 2})
+    assert all(r.chunk.index == 2 for r in filtered)
+
+    # 6. Deterministic identity.
+    assert index.fingerprint() == index.fingerprint()
+
+
+def assert_retriever_contract(
+    retriever: Retriever, query: Query, expected_top_id: str
+) -> None:
+    """Every Retriever (dense, bm25, hybrid, your own) must behave like this.
+    The retriever is assumed already wired to a POPULATED backend."""
+    results = retriever.retrieve(query, k=3)
+    assert results and isinstance(results[0], ScoredChunk)
+
+    # 1. Every hit is attributed to this retriever (fusion depends on it).
+    assert all(r.retriever_name == retriever.name for r in results)
+
+    # 2. Highest score first, and the expected best result wins.
+    assert [r.score for r in results] == sorted(
+        (r.score for r in results), reverse=True
+    )
+    assert results[0].chunk.id == expected_top_id
+
+    # 3. k is respected.
+    assert len(retriever.retrieve(query, k=1)) == 1
+
+    # 4. Deterministic identity.
+    assert retriever.fingerprint() == retriever.fingerprint()

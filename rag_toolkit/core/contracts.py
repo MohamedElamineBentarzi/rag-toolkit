@@ -40,6 +40,7 @@ __all__ = [
     "PageSpan",
     "Document",
     "Chunk",
+    "Query",
     "ScoredChunk",
 ]
 
@@ -253,6 +254,17 @@ class Chunk:
     char_end: Optional[int] = None
     page_start: Optional[int] = None
     page_end: Optional[int] = None
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass
+class Query:
+    """A search request. `filters` is payload-equality scoping handed straight
+    to the store/index (e.g. `{"doc_id": x}`); `metadata` is the pressure valve
+    for retriever-specific hints (query expansions, weights)."""
+
+    text: str
+    filters: Optional[dict] = None
     metadata: dict = field(default_factory=dict)
 
 

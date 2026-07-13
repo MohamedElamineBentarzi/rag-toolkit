@@ -432,7 +432,7 @@ rag_toolkit/
   enrichment/    contextual retrieval, metadata                [v0.2]
   embedding/     hashing ✓, sentence-transformers ✓; API adapters [v0.3]
   storage/       blob (local,minio) + vector (memory,qdrant) ✓  [v0.3]
-  retrieval/     dense, bm25, hybrid (RRF)                     [v0.4]
+  retrieval/     dense ✓, bm25 ✓; hybrid (RRF)                 [v0.4]
   reranking/     bge-reranker, noop                            [v0.4]
   generation/    prompt templates, context packing, citations  [v0.5]
   evaluation/    retrieval + LLM-judge metrics                 [v0.6]

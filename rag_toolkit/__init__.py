@@ -30,6 +30,7 @@ from .core import (
     EmbeddingError,
     Page,
     PageSpan,
+    Query,
     RagToolkitError,
     ScoredChunk,
     Source,
@@ -38,6 +39,7 @@ from .core import (
     registry,
 )
 from .embedding import Embedder, HashingEmbedder, SentenceTransformerEmbedder
+from .retrieval import Bm25Retriever, DenseRetriever, Retriever
 from .ingestion import (
     AutoParser,
     DoclingParser,
@@ -52,7 +54,9 @@ from .ingestion import (
 from .chunking import Chunker, FixedChunker, MarkdownChunker
 from .pipeline import IndexingPipeline, TraceEvent
 from .storage import (
+    BM25Index,
     BlobStore,
+    LexicalIndex,
     LocalBlobStore,
     MemoryVectorStore,
     MinioBlobStore,
@@ -72,6 +76,7 @@ __all__ = [
     "PageSpan",
     "Document",
     "Chunk",
+    "Query",
     "ScoredChunk",
     "Parser",
     "AutoParser",
@@ -94,6 +99,11 @@ __all__ = [
     "VectorStore",
     "MemoryVectorStore",
     "QdrantVectorStore",
+    "LexicalIndex",
+    "BM25Index",
+    "Retriever",
+    "DenseRetriever",
+    "Bm25Retriever",
     "IndexingPipeline",
     "TraceEvent",
     "RagToolkitError",

@@ -6,6 +6,8 @@ index kinds will join this package in the v0.3 storage milestone.
 """
 
 from .base import BlobStore
+from .bm25_index import BM25Index
+from .lexical_index import LexicalIndex
 from .local import LocalBlobStore
 from .memory_store import MemoryVectorStore
 from .minio_store import MinioBlobStore
@@ -19,4 +21,6 @@ __all__ = [
     "VectorStore",
     "MemoryVectorStore",
     "QdrantVectorStore",
+    "LexicalIndex",
+    "BM25Index",
 ]
