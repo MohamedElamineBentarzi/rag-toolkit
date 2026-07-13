@@ -24,10 +24,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from .core import (
+    Answer,
     Chunk,
+    Citation,
     Component,
     Document,
     EmbeddingError,
+    GenerationError,
     Page,
     PageSpan,
     Query,
@@ -39,6 +42,7 @@ from .core import (
     registry,
 )
 from .embedding import Embedder, HashingEmbedder, SentenceTransformerEmbedder
+from .generation import AnthropicGenerator, ExtractiveGenerator, Generator
 from .retrieval import (
     Bm25Retriever,
     DenseRetriever,
@@ -84,6 +88,8 @@ __all__ = [
     "Chunk",
     "Query",
     "ScoredChunk",
+    "Citation",
+    "Answer",
     "Parser",
     "AutoParser",
     "DoclingParser",
@@ -113,12 +119,16 @@ __all__ = [
     "HybridRetriever",
     "Reranker",
     "NoOpReranker",
+    "Generator",
+    "ExtractiveGenerator",
+    "AnthropicGenerator",
     "IndexingPipeline",
     "QueryPipeline",
     "TraceEvent",
     "RagToolkitError",
     "StorageError",
     "EmbeddingError",
+    "GenerationError",
 ]
 
 

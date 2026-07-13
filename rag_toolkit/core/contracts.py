@@ -42,6 +42,8 @@ __all__ = [
     "Chunk",
     "Query",
     "ScoredChunk",
+    "Citation",
+    "Answer",
 ]
 
 
@@ -282,6 +284,38 @@ class ScoredChunk:
     chunk: Chunk
     score: float
     retriever_name: Optional[str] = None
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass
+class Citation:
+    """A resolved source reference behind a generated answer.
+
+    `marker` is the inline number the answer text uses (`[1]`, `[2]`, …), so a
+    UI can link a claim to its source. The rest is provenance carried straight
+    through from the chunk — this is the end of the chain that lets an answer
+    say "from pages 4–5 of report.pdf".
+    """
+
+    marker: int
+    chunk_id: str
+    doc_id: str
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+
+
+@dataclass
+class Answer:
+    """The final generation output: text plus the sources it stands on.
+
+    `citations` are resolved through chunk → page provenance, so every answer
+    can be audited back to the exact passages it used. `usage` carries cost
+    signals (tokens, latency) for the eval suite; empty for non-LLM generators.
+    """
+
+    text: str
+    citations: list["Citation"] = field(default_factory=list)
+    usage: dict = field(default_factory=dict)
     metadata: dict = field(default_factory=dict)
 
 

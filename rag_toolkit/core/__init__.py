@@ -6,7 +6,9 @@ are built on. Zero third-party dependencies by design.
 
 from .component import Component
 from .contracts import (
+    Answer,
     Chunk,
+    Citation,
     Document,
     Page,
     PageSpan,
@@ -20,6 +22,7 @@ from .errors import (
     ConfigError,
     DuplicateComponentError,
     EmbeddingError,
+    GenerationError,
     OcrError,
     ParseError,
     RagToolkitError,
@@ -40,6 +43,8 @@ __all__ = [
     "Chunk",
     "Query",
     "ScoredChunk",
+    "Citation",
+    "Answer",
     "RagToolkitError",
     "ComponentNotFoundError",
     "DuplicateComponentError",
@@ -49,4 +54,5 @@ __all__ = [
     "OcrError",
     "StorageError",
     "EmbeddingError",
+    "GenerationError",
 ]

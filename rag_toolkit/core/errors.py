@@ -72,3 +72,8 @@ class StorageError(RagToolkitError):
 class EmbeddingError(RagToolkitError):
     """Raised when an embedder fails to vectorize text (model load, inference,
     or a missing optional dependency)."""
+
+
+class GenerationError(RagToolkitError):
+    """Raised when a generator fails to produce an answer (LLM call, or a
+    missing optional dependency)."""

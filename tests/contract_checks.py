@@ -12,9 +12,17 @@ import uuid
 import pytest
 
 from rag_toolkit.chunking.base import Chunker
-from rag_toolkit.core.contracts import Chunk, Document, Query, ScoredChunk, Source
+from rag_toolkit.core.contracts import (
+    Answer,
+    Chunk,
+    Document,
+    Query,
+    ScoredChunk,
+    Source,
+)
 from rag_toolkit.core.errors import StorageError
 from rag_toolkit.embedding.base import Embedder
+from rag_toolkit.generation.base import Generator
 from rag_toolkit.ingestion.parsers.base import Parser
 from rag_toolkit.reranking.base import Reranker
 from rag_toolkit.retrieval.base import Retriever
@@ -288,3 +296,28 @@ def assert_reranker_contract(reranker: Reranker) -> None:
     assert reranker.rerank(query, [], top_k=5) == []
     # 4. Deterministic identity.
     assert reranker.fingerprint() == reranker.fingerprint()
+
+
+def assert_generator_contract(
+    generator: Generator, query: Query, context: list[ScoredChunk]
+) -> None:
+    """Every Generator (extractive, LLM-backed, your own) must behave like this.
+    Determinism is NOT asserted — real LLM generators aren't deterministic."""
+    answer = generator.generate(query, context)
+    assert isinstance(answer, Answer)
+    assert isinstance(answer.text, str)
+
+    # 1. Citations reference only the provided chunks and carry provenance.
+    provided = {sc.chunk.id for sc in context}
+    for c in answer.citations:
+        assert c.chunk_id in provided
+        assert c.marker >= 1
+        assert c.doc_id  # provenance survived to the citation
+
+    # 2. Empty context is handled gracefully — an Answer with no citations.
+    empty = generator.generate(query, [])
+    assert isinstance(empty, Answer)
+    assert empty.citations == []
+
+    # 3. Deterministic identity (the component, not its output).
+    assert generator.fingerprint() == generator.fingerprint()

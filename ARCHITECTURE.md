@@ -434,7 +434,7 @@ rag_toolkit/
   storage/       blob (local,minio) + vector (memory,qdrant) ✓  [v0.3]
   retrieval/     dense ✓, bm25 ✓, hybrid RRF ✓                 [v0.4]
   reranking/     noop ✓; bge-reranker, cohere                  [v0.4]
-  generation/    prompt templates, context packing, citations  [v0.5]
+  generation/    extractive ✓, anthropic ✓; packing+citations ✓ [v0.5]
   evaluation/    retrieval + LLM-judge metrics                 [v0.6]
   tuning/        search space, tuners, trial log, leaderboard  [v0.7]
   pipeline.py    IndexingPipeline ✓ QueryPipeline ✓; RagPipeline [v0.2+]
