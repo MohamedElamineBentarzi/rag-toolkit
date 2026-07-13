@@ -27,6 +27,7 @@ from .core import (
     Chunk,
     Component,
     Document,
+    EmbeddingError,
     Page,
     PageSpan,
     RagToolkitError,
@@ -35,6 +36,7 @@ from .core import (
     StorageError,
     registry,
 )
+from .embedding import Embedder, HashingEmbedder, SentenceTransformerEmbedder
 from .ingestion import (
     AutoParser,
     DoclingParser,
@@ -74,6 +76,9 @@ __all__ = [
     "Chunker",
     "FixedChunker",
     "MarkdownChunker",
+    "Embedder",
+    "HashingEmbedder",
+    "SentenceTransformerEmbedder",
     "BlobStore",
     "LocalBlobStore",
     "MinioBlobStore",
@@ -81,6 +86,7 @@ __all__ = [
     "TraceEvent",
     "RagToolkitError",
     "StorageError",
+    "EmbeddingError",
 ]
 
 

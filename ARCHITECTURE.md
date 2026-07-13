@@ -430,7 +430,7 @@ rag_toolkit/
   ingestion/     detection, parsers/, ocr/                     [v0.1 ✓]
   chunking/      fixed, markdown-aware ✓; chonkie adapter      [v0.2]
   enrichment/    contextual retrieval, metadata                [v0.2]
-  embedding/     bge-m3, sentence-transformers, API adapters   [v0.3]
+  embedding/     hashing ✓, sentence-transformers ✓; API adapters [v0.3]
   storage/       blob stores local, minio ✓; vector+bm25       [v0.3]
   retrieval/     dense, bm25, hybrid (RRF)                     [v0.4]
   reranking/     bge-reranker, noop                            [v0.4]

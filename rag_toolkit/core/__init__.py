@@ -10,6 +10,7 @@ from .errors import (
     ComponentNotFoundError,
     ConfigError,
     DuplicateComponentError,
+    EmbeddingError,
     OcrError,
     ParseError,
     RagToolkitError,
@@ -36,4 +37,5 @@ __all__ = [
     "ParseError",
     "OcrError",
     "StorageError",
+    "EmbeddingError",
 ]

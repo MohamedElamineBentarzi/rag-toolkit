@@ -67,3 +67,8 @@ class StorageError(RagToolkitError):
         self.key = key
         location = f" [key={key}]" if key else ""
         super().__init__(message + location)
+
+
+class EmbeddingError(RagToolkitError):
+    """Raised when an embedder fails to vectorize text (model load, inference,
+    or a missing optional dependency)."""

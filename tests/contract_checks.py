@@ -14,6 +14,7 @@ import pytest
 from rag_toolkit.chunking.base import Chunker
 from rag_toolkit.core.contracts import Document, Source
 from rag_toolkit.core.errors import StorageError
+from rag_toolkit.embedding.base import Embedder
 from rag_toolkit.ingestion.parsers.base import Parser
 from rag_toolkit.storage.base import BlobStore
 
@@ -112,3 +113,30 @@ def assert_chunker_contract(chunker: Chunker, document: Document) -> None:
     again = [c.id for c in chunker.chunk(document)]
     assert again == [c.id for c in chunks]
     assert chunker.fingerprint() == chunker.fingerprint()
+
+
+def assert_embedder_contract(embedder: Embedder) -> None:
+    """Every Embedder (hashing, sentence-transformers, your own) behaves so."""
+    dim = embedder.dimensions
+    assert isinstance(dim, int) and dim > 0
+
+    texts = ["alpha beta gamma", "gamma delta", ""]
+    vectors = embedder.embed_texts(texts)
+    # 1. One vector per input, order preserved, each the declared width.
+    assert len(vectors) == len(texts)
+    for v in vectors:
+        assert len(v) == dim
+        assert all(isinstance(x, float) for x in v)
+
+    # 2. Empty batch ⇒ empty list (not an error).
+    assert embedder.embed_texts([]) == []
+
+    # 3. A query embeds to the same space (same width).
+    q = embedder.embed_query("alpha beta")
+    assert len(q) == dim
+    assert all(isinstance(x, float) for x in q)
+
+    # 4. Determinism — the eval cache depends on it.
+    assert embedder.embed_texts(texts) == vectors
+    assert embedder.embed_query("alpha beta") == q
+    assert embedder.fingerprint() == embedder.fingerprint()
