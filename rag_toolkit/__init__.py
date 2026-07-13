@@ -42,6 +42,12 @@ from .core import (
     registry,
 )
 from .embedding import Embedder, HashingEmbedder, SentenceTransformerEmbedder
+from .enrichment import (
+    ContextualEnricher,
+    Enricher,
+    HeadingEnricher,
+    NoOpEnricher,
+)
 from .generation import AnthropicGenerator, ExtractiveGenerator, Generator
 from .retrieval import (
     Bm25Retriever,
@@ -105,6 +111,10 @@ __all__ = [
     "Embedder",
     "HashingEmbedder",
     "SentenceTransformerEmbedder",
+    "Enricher",
+    "NoOpEnricher",
+    "HeadingEnricher",
+    "ContextualEnricher",
     "BlobStore",
     "LocalBlobStore",
     "MinioBlobStore",
@@ -130,6 +140,7 @@ __all__ = [
     "StorageError",
     "EmbeddingError",
     "GenerationError",
+    "EnrichmentError",
 ]
 
 

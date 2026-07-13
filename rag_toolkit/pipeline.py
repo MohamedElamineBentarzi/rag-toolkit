@@ -54,6 +54,8 @@ from .core.contracts import (
 )
 from .embedding.base import Embedder
 from .embedding.hashing import HashingEmbedder
+from .enrichment.base import Enricher
+from .enrichment.noop import NoOpEnricher
 from .generation.base import Generator
 from .generation.extractive import ExtractiveGenerator
 from .ingestion.detection import detect_format
@@ -120,12 +122,15 @@ class IndexingPipeline:
         self,
         parser: Optional[Parser] = None,
         chunker: Optional[Chunker] = None,
+        enricher: Optional[Enricher] = None,
         blob_store: Optional[BlobStore] = None,
         trace: TraceHook = _noop_trace,
     ) -> None:
-        # AutoParser routes any format; FixedChunker is a sane default.
+        # AutoParser routes any format; FixedChunker is a sane default; the
+        # enricher defaults to NoOpEnricher so the flow never branches on it.
         self.parser = parser if parser is not None else AutoParser()
         self.chunker = chunker if chunker is not None else FixedChunker()
+        self.enricher = enricher if enricher is not None else NoOpEnricher()
         self.blob_store = blob_store
         self.trace = trace
 
@@ -156,7 +161,9 @@ class IndexingPipeline:
     def _chunk(self, source: Source, doc: Document) -> Iterator[Chunk]:
         start = time.perf_counter()
         count = 0
-        for chunk in self.chunker.chunk(doc):
+        # Chunk → Enrich → out. The enricher (NoOp by default) may augment
+        # chunk text or add synthetic chunks; it sees the parent document.
+        for chunk in self.enricher.enrich(self.chunker.chunk(doc), doc):
             count += 1
             yield chunk
         self.trace(TraceEvent(
@@ -268,6 +275,7 @@ class RagPipeline:
         generator: Optional[Generator] = None,
         parser: Optional[Parser] = None,
         chunker: Optional[Chunker] = None,
+        enricher: Optional[Enricher] = None,
         reranker: Optional[Reranker] = None,
         blob_store: Optional[BlobStore] = None,
         fetch_k: int = 50,
@@ -280,7 +288,10 @@ class RagPipeline:
             generator if generator is not None else ExtractiveGenerator()
         )
         self.batch_size = batch_size
-        self.indexing = IndexingPipeline(parser, chunker, blob_store, trace)
+        self.indexing = IndexingPipeline(
+            parser=parser, chunker=chunker, enricher=enricher,
+            blob_store=blob_store, trace=trace,
+        )
         retriever = DenseRetriever(embedder=self.embedder, store=self.store)
         self.query_pipeline = QueryPipeline(retriever, reranker, fetch_k, trace)
 

@@ -429,7 +429,7 @@ rag_toolkit/
   core/          contracts, component, registry, errors        [v0.1 ✓]
   ingestion/     detection, parsers/, ocr/                     [v0.1 ✓]
   chunking/      fixed, markdown-aware ✓; chonkie adapter      [v0.2]
-  enrichment/    contextual retrieval, metadata                [v0.2]
+  enrichment/    noop ✓, heading ✓, contextual ✓ (LLM)          [v0.2]
   embedding/     hashing ✓, sentence-transformers ✓; API adapters [v0.3]
   storage/       blob (local,minio) + vector (memory,qdrant) ✓  [v0.3]
   retrieval/     dense ✓, bm25 ✓, hybrid RRF ✓                 [v0.4]

@@ -22,6 +22,7 @@ from .errors import (
     ConfigError,
     DuplicateComponentError,
     EmbeddingError,
+    EnrichmentError,
     GenerationError,
     OcrError,
     ParseError,
@@ -55,4 +56,5 @@ __all__ = [
     "StorageError",
     "EmbeddingError",
     "GenerationError",
+    "EnrichmentError",
 ]

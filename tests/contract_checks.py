@@ -22,6 +22,7 @@ from rag_toolkit.core.contracts import (
 )
 from rag_toolkit.core.errors import StorageError
 from rag_toolkit.embedding.base import Embedder
+from rag_toolkit.enrichment.base import Enricher
 from rag_toolkit.generation.base import Generator
 from rag_toolkit.ingestion.parsers.base import Parser
 from rag_toolkit.reranking.base import Reranker
@@ -125,6 +126,24 @@ def assert_chunker_contract(chunker: Chunker, document: Document) -> None:
     again = [c.id for c in chunker.chunk(document)]
     assert again == [c.id for c in chunks]
     assert chunker.fingerprint() == chunker.fingerprint()
+
+
+def assert_enricher_contract(
+    enricher: Enricher, document: Document, chunks: list[Chunk]
+) -> None:
+    """Every Enricher (noop, heading, contextual, your own) must behave so.
+
+    Passed the document's own chunks; enrichers may augment text or add
+    synthetic chunks, but must keep the doc link and yield real Chunks."""
+    out = list(enricher.enrich(iter(chunks), document))
+    assert out, "enricher dropped all chunks for a non-empty document"
+    for c in out:
+        assert isinstance(c, Chunk)
+        assert c.doc_id == document.id  # the doc link survives enrichment
+        assert c.text  # never blanks a chunk
+
+    # Deterministic identity (the component, not necessarily its LLM output).
+    assert enricher.fingerprint() == enricher.fingerprint()
 
 
 def assert_embedder_contract(embedder: Embedder) -> None:

@@ -77,3 +77,8 @@ class EmbeddingError(RagToolkitError):
 class GenerationError(RagToolkitError):
     """Raised when a generator fails to produce an answer (LLM call, or a
     missing optional dependency)."""
+
+
+class EnrichmentError(RagToolkitError):
+    """Raised when an enricher fails to augment chunks (LLM call, or a missing
+    optional dependency)."""
