@@ -83,6 +83,29 @@ for chunk in chunker.chunk(doc):
 `char_start`/`char_end` are the primary provenance; pages are derived from them.
 Overlapping spans are legal — that is how overlap strategies express themselves.
 
+## Index a corpus
+
+`IndexingPipeline` is the thin wiring that runs `Source → parse → chunk` and,
+when you hand it a blob store, captures the durable truth on the way (raw bytes
++ parse cache, content-addressed, deduped). All intelligence is in the
+components; the pipeline is a dumb for-loop with a tracing hook:
+
+```python
+from rag_toolkit import IndexingPipeline, LocalBlobStore, Source
+
+pipeline = IndexingPipeline(
+    blob_store=LocalBlobStore(root="./.rag_cache/blobs"),  # optional truth store
+    trace=print,                                           # optional TraceEvent hook
+)
+
+for chunk in pipeline.index(Source.from_path("report.pdf")):
+    embed_and_store(chunk)        # your v0.3 embedder/vector store goes here
+```
+
+Swap the parser, chunker, or blob store by passing a different component — no
+pipeline code changes. Re-indexing the same bytes is a no-op (same content →
+same key).
+
 ## Persist raw files
 
 A `BlobStore` is the durable *truth store* for ingested bytes (raw files today,

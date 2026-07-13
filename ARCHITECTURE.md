@@ -437,7 +437,7 @@ rag_toolkit/
   generation/    prompt templates, context packing, citations  [v0.5]
   evaluation/    retrieval + LLM-judge metrics                 [v0.6]
   tuning/        search space, tuners, trial log, leaderboard  [v0.7]
-  pipeline.py    IndexingPipeline / QueryPipeline / RagPipeline [v0.2+]
+  pipeline.py    IndexingPipeline ✓; QueryPipeline / RagPipeline [v0.2+]
 ```
 
 Each milestone ships with contract tests, a cookbook example, and at least

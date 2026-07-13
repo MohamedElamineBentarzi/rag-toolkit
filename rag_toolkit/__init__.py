@@ -47,6 +47,7 @@ from .ingestion import (
     detect_format,
 )
 from .chunking import Chunker, FixedChunker, MarkdownChunker
+from .pipeline import IndexingPipeline, TraceEvent
 from .storage import BlobStore, LocalBlobStore, MinioBlobStore
 
 __version__ = "0.1.0"
@@ -76,6 +77,8 @@ __all__ = [
     "BlobStore",
     "LocalBlobStore",
     "MinioBlobStore",
+    "IndexingPipeline",
+    "TraceEvent",
     "RagToolkitError",
     "StorageError",
 ]
