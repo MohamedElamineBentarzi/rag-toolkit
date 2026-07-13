@@ -433,11 +433,11 @@ rag_toolkit/
   embedding/     hashing ✓, sentence-transformers ✓; API adapters [v0.3]
   storage/       blob (local,minio) + vector (memory,qdrant) ✓  [v0.3]
   retrieval/     dense ✓, bm25 ✓, hybrid RRF ✓                 [v0.4]
-  reranking/     bge-reranker, noop                            [v0.4]
+  reranking/     noop ✓; bge-reranker, cohere                  [v0.4]
   generation/    prompt templates, context packing, citations  [v0.5]
   evaluation/    retrieval + LLM-judge metrics                 [v0.6]
   tuning/        search space, tuners, trial log, leaderboard  [v0.7]
-  pipeline.py    IndexingPipeline ✓; QueryPipeline / RagPipeline [v0.2+]
+  pipeline.py    IndexingPipeline ✓ QueryPipeline ✓; RagPipeline [v0.2+]
 ```
 
 Each milestone ships with contract tests, a cookbook example, and at least

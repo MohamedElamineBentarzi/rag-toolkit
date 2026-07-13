@@ -57,7 +57,8 @@ from .ingestion import (
     detect_format,
 )
 from .chunking import Chunker, FixedChunker, MarkdownChunker
-from .pipeline import IndexingPipeline, TraceEvent
+from .pipeline import IndexingPipeline, QueryPipeline, TraceEvent
+from .reranking import NoOpReranker, Reranker
 from .storage import (
     BM25Index,
     BlobStore,
@@ -110,7 +111,10 @@ __all__ = [
     "DenseRetriever",
     "Bm25Retriever",
     "HybridRetriever",
+    "Reranker",
+    "NoOpReranker",
     "IndexingPipeline",
+    "QueryPipeline",
     "TraceEvent",
     "RagToolkitError",
     "StorageError",

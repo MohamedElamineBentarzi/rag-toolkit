@@ -16,6 +16,7 @@ from rag_toolkit.core.contracts import Chunk, Document, Query, ScoredChunk, Sour
 from rag_toolkit.core.errors import StorageError
 from rag_toolkit.embedding.base import Embedder
 from rag_toolkit.ingestion.parsers.base import Parser
+from rag_toolkit.reranking.base import Reranker
 from rag_toolkit.retrieval.base import Retriever
 from rag_toolkit.storage.base import BlobStore
 from rag_toolkit.storage.lexical_index import LexicalIndex
@@ -259,3 +260,31 @@ def assert_retriever_contract(
 
     # 4. Deterministic identity.
     assert retriever.fingerprint() == retriever.fingerprint()
+
+
+def assert_reranker_contract(reranker: Reranker) -> None:
+    """Every Reranker (noop, cross-encoder, your own) must behave like this."""
+    query = Query(text="quick brown fox")
+    # Candidates arrive already ranked from a retriever (scores descending).
+    candidates = [
+        ScoredChunk(
+            chunk=Chunk(id=f"d:{i}", doc_id="d", text=t, index=i,
+                        char_start=i, char_end=i + 1, page_start=1, page_end=1),
+            score=1.0 - i * 0.1, retriever_name="dense",
+        )
+        for i, t in enumerate(["quick brown fox", "lazy dog", "unrelated text"])
+    ]
+    candidate_ids = {c.chunk.id for c in candidates}
+
+    reranked = reranker.rerank(query, candidates, top_k=2)
+    # 1. Never more than top_k; only chunks drawn from the candidates.
+    assert len(reranked) <= 2
+    assert all(r.chunk.id in candidate_ids for r in reranked)
+    # 2. Output is ranked highest-first.
+    assert [r.score for r in reranked] == sorted(
+        (r.score for r in reranked), reverse=True
+    )
+    # 3. Empty candidates ⇒ empty result (not an error).
+    assert reranker.rerank(query, [], top_k=5) == []
+    # 4. Deterministic identity.
+    assert reranker.fingerprint() == reranker.fingerprint()

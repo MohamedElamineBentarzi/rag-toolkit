@@ -43,13 +43,16 @@ from typing import Callable, Iterable, Iterator, Optional
 
 from .chunking.base import Chunker
 from .chunking.fixed import FixedChunker
-from .core.contracts import Chunk, Document, Source, SourceFormat
+from .core.contracts import Chunk, Document, Query, ScoredChunk, Source, SourceFormat
 from .ingestion.detection import detect_format
 from .ingestion.parsers.auto import AutoParser
 from .ingestion.parsers.base import Parser
+from .reranking.base import Reranker
+from .reranking.noop import NoOpReranker
+from .retrieval.base import Retriever
 from .storage.base import BlobStore
 
-__all__ = ["TraceEvent", "IndexingPipeline"]
+__all__ = ["TraceEvent", "IndexingPipeline", "QueryPipeline"]
 
 
 @dataclass
@@ -172,6 +175,53 @@ class IndexingPipeline:
             "store_parsed", source.uri, _ms(start),
             {"key": md_key, "cache_hit": hit},
         ))
+
+
+class QueryPipeline:
+    """Wire Query → retrieve → rerank → ranked ScoredChunks.
+
+    The online mirror of `IndexingPipeline`, and just as thin: fetch a generous
+    candidate list from the retriever, hand it to the reranker for a precise
+    top-`k`. The reranker defaults to `NoOpReranker` (Null Object) so this code
+    never branches on whether reranking is configured — `retrieve 50 → rerank
+    to k` is one straight path whether the reranker is a cross-encoder or a
+    passthrough.
+
+    The retriever is a composed component (it wraps a populated store/index), so
+    it is passed in as an instance — same wiring philosophy as the retrievers
+    themselves.
+    """
+
+    def __init__(
+        self,
+        retriever: Retriever,
+        reranker: Optional[Reranker] = None,
+        fetch_k: int = 50,
+        trace: TraceHook = _noop_trace,
+    ) -> None:
+        self.retriever = retriever
+        self.reranker = reranker if reranker is not None else NoOpReranker()
+        self.fetch_k = fetch_k
+        self.trace = trace
+
+    def query(self, query: Query | str, k: int = 10) -> list[ScoredChunk]:
+        if isinstance(query, str):
+            query = Query(text=query)
+
+        start = time.perf_counter()
+        candidates = self.retriever.retrieve(query, self.fetch_k)
+        self.trace(TraceEvent(
+            "retrieve", query.text, _ms(start),
+            {"retriever": self.retriever.name, "candidates": len(candidates)},
+        ))
+
+        start = time.perf_counter()
+        results = self.reranker.rerank(query, candidates, k)
+        self.trace(TraceEvent(
+            "rerank", query.text, _ms(start),
+            {"reranker": self.reranker.name, "results": len(results)},
+        ))
+        return results
 
 
 def _ms(start: float) -> float:
