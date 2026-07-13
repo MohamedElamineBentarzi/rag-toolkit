@@ -433,7 +433,7 @@ rag_toolkit/
   embedding/     hashing ✓, sentence-transformers ✓; API adapters [v0.3]
   storage/       blob (local,minio) + vector (memory,qdrant) ✓  [v0.3]
   retrieval/     dense ✓, bm25 ✓, hybrid RRF ✓                 [v0.4]
-  reranking/     noop ✓; bge-reranker, cohere                  [v0.4]
+  reranking/     noop ✓, keyword ✓, bge-reranker ✓             [v0.4]
   generation/    extractive ✓, anthropic ✓; packing+citations ✓ [v0.5]
   evaluation/    retrieval + LLM-judge metrics                 [v0.6]
   tuning/        search space, tuners, trial log, leaderboard  [v0.7]

@@ -6,9 +6,13 @@ cohere) arrive behind optional extras.
 """
 
 from .base import Reranker
+from .bge import BgeReranker
+from .keyword import KeywordReranker
 from .noop import NoOpReranker
 
 __all__ = [
     "Reranker",
     "NoOpReranker",
+    "KeywordReranker",
+    "BgeReranker",
 ]

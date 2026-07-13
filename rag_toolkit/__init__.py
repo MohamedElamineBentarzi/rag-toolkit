@@ -68,7 +68,7 @@ from .ingestion import (
 )
 from .chunking import Chunker, FixedChunker, MarkdownChunker
 from .pipeline import IndexingPipeline, QueryPipeline, RagPipeline, TraceEvent
-from .reranking import NoOpReranker, Reranker
+from .reranking import BgeReranker, KeywordReranker, NoOpReranker, Reranker
 from .storage import (
     BM25Index,
     BlobStore,
@@ -129,6 +129,8 @@ __all__ = [
     "HybridRetriever",
     "Reranker",
     "NoOpReranker",
+    "KeywordReranker",
+    "BgeReranker",
     "Generator",
     "ExtractiveGenerator",
     "AnthropicGenerator",
