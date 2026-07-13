@@ -5,7 +5,15 @@ are built on. Zero third-party dependencies by design.
 """
 
 from .component import Component
-from .contracts import Chunk, Document, Page, PageSpan, Source, SourceFormat
+from .contracts import (
+    Chunk,
+    Document,
+    Page,
+    PageSpan,
+    ScoredChunk,
+    Source,
+    SourceFormat,
+)
 from .errors import (
     ComponentNotFoundError,
     ConfigError,
@@ -29,6 +37,7 @@ __all__ = [
     "PageSpan",
     "Document",
     "Chunk",
+    "ScoredChunk",
     "RagToolkitError",
     "ComponentNotFoundError",
     "DuplicateComponentError",

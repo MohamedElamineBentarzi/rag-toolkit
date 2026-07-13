@@ -12,11 +12,12 @@ import uuid
 import pytest
 
 from rag_toolkit.chunking.base import Chunker
-from rag_toolkit.core.contracts import Document, Source
+from rag_toolkit.core.contracts import Chunk, Document, ScoredChunk, Source
 from rag_toolkit.core.errors import StorageError
 from rag_toolkit.embedding.base import Embedder
 from rag_toolkit.ingestion.parsers.base import Parser
 from rag_toolkit.storage.base import BlobStore
+from rag_toolkit.storage.vector_store import VectorStore
 
 
 def assert_parser_contract(parser: Parser, source: Source) -> None:
@@ -140,3 +141,48 @@ def assert_embedder_contract(embedder: Embedder) -> None:
     assert embedder.embed_texts(texts) == vectors
     assert embedder.embed_query("alpha beta") == q
     assert embedder.fingerprint() == embedder.fingerprint()
+
+
+def assert_vector_store_contract(store: VectorStore, dimensions: int = 8) -> None:
+    """Every VectorStore (memory, qdrant, your own) must behave like this."""
+    def unit(i: int) -> list[float]:
+        v = [0.0] * dimensions
+        v[i] = 1.0
+        return v
+
+    chunks = [
+        Chunk(id=f"d:{i}", doc_id="d", text=f"chunk {i}", index=i,
+              char_start=i, char_end=i + 1, page_start=1, page_end=1)
+        for i in range(3)
+    ]
+    vectors = [unit(0), unit(1), unit(2)]
+
+    # 1. Empty store: search yields nothing (not an error).
+    assert store.search(unit(0), k=5) == []
+
+    # 2. After upsert, the exact match ranks first, scores descend, and the
+    #    reconstructed chunk keeps its provenance.
+    store.upsert(chunks, vectors)
+    results = store.search(unit(0), k=3)
+    assert results and isinstance(results[0], ScoredChunk)
+    assert results[0].chunk.id == "d:0"
+    assert [r.score for r in results] == sorted(
+        (r.score for r in results), reverse=True
+    )
+    assert results[0].chunk.doc_id == "d"
+    assert results[0].chunk.page_start == 1
+    assert results[0].chunk.char_start == 0
+
+    # 3. k is respected.
+    assert len(store.search(unit(0), k=2)) == 2
+
+    # 4. Re-upserting the same ids overwrites, never duplicates.
+    store.upsert(chunks, vectors)
+    assert len(store.search(unit(0), k=10)) == 3
+
+    # 5. Payload-equality filters narrow the result set.
+    filtered = store.search(unit(1), k=10, filters={"index": 1})
+    assert filtered and all(r.chunk.index == 1 for r in filtered)
+
+    # 6. Identity is deterministic.
+    assert store.fingerprint() == store.fingerprint()

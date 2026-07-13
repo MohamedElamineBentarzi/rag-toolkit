@@ -40,6 +40,7 @@ __all__ = [
     "PageSpan",
     "Document",
     "Chunk",
+    "ScoredChunk",
 ]
 
 
@@ -252,6 +253,23 @@ class Chunk:
     char_end: Optional[int] = None
     page_start: Optional[int] = None
     page_end: Optional[int] = None
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass
+class ScoredChunk:
+    """A Chunk paired with a relevance score, produced by search/retrieval.
+
+    `score` semantics belong to whatever produced it (cosine similarity, an
+    RRF score, a reranker logit) — the only cross-stage guarantee is *higher
+    means more relevant*, so callers sort descending. `retriever_name` records
+    which component produced the result: essential once hybrid retrieval fuses
+    several sources, and the hook for per-source eval attribution.
+    """
+
+    chunk: Chunk
+    score: float
+    retriever_name: Optional[str] = None
     metadata: dict = field(default_factory=dict)
 
 

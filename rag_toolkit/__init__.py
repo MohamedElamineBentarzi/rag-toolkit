@@ -31,6 +31,7 @@ from .core import (
     Page,
     PageSpan,
     RagToolkitError,
+    ScoredChunk,
     Source,
     SourceFormat,
     StorageError,
@@ -50,7 +51,14 @@ from .ingestion import (
 )
 from .chunking import Chunker, FixedChunker, MarkdownChunker
 from .pipeline import IndexingPipeline, TraceEvent
-from .storage import BlobStore, LocalBlobStore, MinioBlobStore
+from .storage import (
+    BlobStore,
+    LocalBlobStore,
+    MemoryVectorStore,
+    MinioBlobStore,
+    QdrantVectorStore,
+    VectorStore,
+)
 
 __version__ = "0.1.0"
 
@@ -64,6 +72,7 @@ __all__ = [
     "PageSpan",
     "Document",
     "Chunk",
+    "ScoredChunk",
     "Parser",
     "AutoParser",
     "DoclingParser",
@@ -82,6 +91,9 @@ __all__ = [
     "BlobStore",
     "LocalBlobStore",
     "MinioBlobStore",
+    "VectorStore",
+    "MemoryVectorStore",
+    "QdrantVectorStore",
     "IndexingPipeline",
     "TraceEvent",
     "RagToolkitError",

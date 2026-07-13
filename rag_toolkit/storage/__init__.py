@@ -7,10 +7,16 @@ index kinds will join this package in the v0.3 storage milestone.
 
 from .base import BlobStore
 from .local import LocalBlobStore
+from .memory_store import MemoryVectorStore
 from .minio_store import MinioBlobStore
+from .qdrant_store import QdrantVectorStore
+from .vector_store import VectorStore
 
 __all__ = [
     "BlobStore",
     "LocalBlobStore",
     "MinioBlobStore",
+    "VectorStore",
+    "MemoryVectorStore",
+    "QdrantVectorStore",
 ]

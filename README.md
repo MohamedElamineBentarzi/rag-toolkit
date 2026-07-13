@@ -106,6 +106,30 @@ Swap the parser, chunker, or blob store by passing a different component — no
 pipeline code changes. Re-indexing the same bytes is a no-op (same content →
 same key).
 
+## Embed and search
+
+Embed chunks and put them in a vector store to make them searchable. The
+`memory` store (pure Python) plus the `hashing` embedder give a fully local,
+dependency-free loop; swap in `sentence-transformers` + `qdrant` for production
+by changing two component names:
+
+```python
+import rag_toolkit as rk
+from rag_toolkit import HashingEmbedder, IndexingPipeline, MemoryVectorStore, Source
+
+embedder = HashingEmbedder()          # or SentenceTransformerEmbedder() (bge-m3)
+store = MemoryVectorStore()           # or QdrantVectorStore(url="http://localhost:6333")
+
+chunks = list(IndexingPipeline().index(Source.from_path("report.pdf")))
+store.upsert(chunks, embedder.embed_texts([c.text for c in chunks]))
+
+for hit in store.search(embedder.embed_query("What was Q3 revenue?"), k=5):
+    print(hit.score, hit.chunk.page_start, hit.chunk.text[:80])   # provenance intact
+```
+
+`search` returns `ScoredChunk`s with the full chunk (text + page provenance)
+inline, so answering never has to touch the blob store.
+
 ## Persist raw files
 
 A `BlobStore` is the durable *truth store* for ingested bytes (raw files today,
