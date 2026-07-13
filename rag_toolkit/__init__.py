@@ -39,7 +39,12 @@ from .core import (
     registry,
 )
 from .embedding import Embedder, HashingEmbedder, SentenceTransformerEmbedder
-from .retrieval import Bm25Retriever, DenseRetriever, Retriever
+from .retrieval import (
+    Bm25Retriever,
+    DenseRetriever,
+    HybridRetriever,
+    Retriever,
+)
 from .ingestion import (
     AutoParser,
     DoclingParser,
@@ -104,6 +109,7 @@ __all__ = [
     "Retriever",
     "DenseRetriever",
     "Bm25Retriever",
+    "HybridRetriever",
     "IndexingPipeline",
     "TraceEvent",
     "RagToolkitError",
