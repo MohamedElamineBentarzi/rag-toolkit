@@ -1,0 +1,31 @@
+# requirements-gpu.txt — install the CUDA (GPU) build of PyTorch.
+#
+# rag-toolkit's core is pure Python; only its local-model components touch a GPU,
+# and they do so automatically once a CUDA torch is installed:
+#   - SentenceTransformerEmbedder   (embeddings)
+#   - BgeReranker                   (cross-encoder rerank)
+#   - DoclingParser                 (layout/table models)
+# Everything else (hashing embedder, BM25, memory/qdrant stores, cloud OCR,
+# Anthropic generation) never uses a GPU.
+#
+# ── CUDA tag ─────────────────────────────────────────────────────────────────
+# Uses cu126: it ships the recent torch builds (2.7 … 2.13+cu126), unlike cu124
+# which stops at torch 2.6. Fine for the RTX 3070 driver (CUDA 12.6). If needed,
+# check the max your driver supports via `nvidia-smi` (top-right "CUDA Version").
+#
+# ── Install order matters (the docling / torch clobber) ──────────────────────
+# Installing a torch-dependent package (docling, sentence-transformers) in its
+# own `pip/uv install` RE-RESOLVES torch and can pull the CPU wheel from PyPI,
+# overwriting this CUDA build. So install those FIRST, then run this file LAST:
+#
+#   uv pip install -e ".[dev,docling,sentence-transformers,anthropic]"
+#   uv pip install -r requirements-gpu.txt --reinstall
+#
+# Then verify (must print True):
+#   python -c "import torch; print(torch.cuda.is_available())"
+#
+# If a later install ever flips torch back to +cpu, just re-run the last line.
+# ─────────────────────────────────────────────────────────────────────────────
+
+--index-url https://download.pytorch.org/whl/cu126
+torch
