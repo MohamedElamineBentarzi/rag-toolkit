@@ -19,7 +19,7 @@ Why this matters (Open/Closed Principle in practice):
 from __future__ import annotations
 
 from importlib import metadata
-from typing import Any, Optional, Type
+from typing import Any, Optional, Type, TypeVar
 
 from .component import Component
 from .errors import ComponentNotFoundError, DuplicateComponentError
@@ -27,6 +27,12 @@ from .errors import ComponentNotFoundError, DuplicateComponentError
 __all__ = ["Registry", "registry"]
 
 ENTRY_POINT_GROUP = "rag_toolkit.components"
+
+#: Preserves the decorated class's exact type through @register, so type
+#: checkers see `HashingEmbedder`, not `Component` — otherwise every registered
+#: class collapses to `type[Component]` and can't be passed where its own base
+#: (Embedder, VectorStore, ...) is expected.
+_C = TypeVar("_C", bound=Component)
 
 
 class Registry:
@@ -38,7 +44,7 @@ class Registry:
 
     # -- registration --------------------------------------------------------
 
-    def register(self, cls: Type[Component]) -> Type[Component]:
+    def register(self, cls: Type[_C]) -> Type[_C]:
         """Class decorator. Reads identity from the class itself:
 
             @registry.register
