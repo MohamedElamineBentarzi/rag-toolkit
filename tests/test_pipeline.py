@@ -3,6 +3,7 @@ import json
 
 from rag_toolkit.chunking.fixed import FixedChunker
 from rag_toolkit.core.contracts import Source
+from rag_toolkit.ingestion.parsers.plaintext import PlainTextParser
 from rag_toolkit.pipeline import IndexingPipeline, TraceEvent
 from rag_toolkit.storage.local import LocalBlobStore
 
@@ -59,6 +60,36 @@ def test_blob_store_captures_raw_and_parsed_truth(tmp_path):
     by_stage = {e.stage: e for e in events}
     assert by_stage["store_raw"].detail["cache_hit"] is False
     assert by_stage["store_parsed"].detail["cache_hit"] is False
+
+
+class _CountingParser(PlainTextParser):
+    """PlainTextParser that records how many times it actually parsed."""
+    name = "counting-parser"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parses = 0
+
+    def parse(self, source):
+        self.parses += 1
+        return super().parse(source)
+
+
+def test_parse_cache_read_skips_reparse(tmp_path):
+    store = LocalBlobStore(root=str(tmp_path))
+    parser = _CountingParser(page_chars=10_000_000)
+    pipeline = IndexingPipeline(parser=parser, blob_store=store)
+    src = text_source(body="# T\nsome body text\n")
+
+    chunks1 = list(pipeline.index(src))
+    assert parser.parses == 1                     # first run parses
+
+    events: list[TraceEvent] = []
+    pipeline.trace = events.append
+    chunks2 = list(pipeline.index(src))
+    assert parser.parses == 1                     # second run did NOT re-parse
+    assert {e.stage: e.detail.get("cache_hit") for e in events}["parse"] is True
+    assert [c.text for c in chunks2] == [c.text for c in chunks1]  # identical output
 
 
 def test_reindexing_same_content_is_deduped(tmp_path):

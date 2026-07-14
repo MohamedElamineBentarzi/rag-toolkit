@@ -1,8 +1,10 @@
 """RagPipeline: the whole loop end to end, zero dependencies."""
 from rag_toolkit.chunking.markdown import MarkdownChunker
 from rag_toolkit.core.contracts import Answer, Query, Source
+from rag_toolkit.embedding.hashing import HashingEmbedder
 from rag_toolkit.generation.extractive import ExtractiveGenerator
 from rag_toolkit.pipeline import RagPipeline
+from rag_toolkit.storage.local import LocalBlobStore
 
 _CORPUS = "# France\nParis is the capital of France.\n\n# Fruit\nBananas are yellow.\n"
 
@@ -43,6 +45,34 @@ def test_index_populates_the_store():
     # Two headings ⇒ two chunks upserted into the (default memory) store.
     hits = rag.store.search(rag.embedder.embed_query("fruit"), k=10)
     assert len(hits) == 2
+
+
+class _CountingEmbedder(HashingEmbedder):
+    """HashingEmbedder that records how many texts it actually embedded."""
+    name = "counting-emb"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.embedded = 0
+
+    def embed_texts(self, texts):
+        self.embedded += len(texts)
+        return super().embed_texts(texts)
+
+
+def test_embedding_cache_skips_recompute_across_runs(tmp_path):
+    cache = LocalBlobStore(root=str(tmp_path))
+
+    first = _CountingEmbedder()
+    RagPipeline(embedder=first, chunker=MarkdownChunker(),
+                embedding_cache=cache).index(source())
+    assert first.embedded == 2               # two heading sections, both embedded
+
+    # A fresh embedder of the same config shares the cache (keyed by fingerprint).
+    second = _CountingEmbedder()
+    RagPipeline(embedder=second, chunker=MarkdownChunker(),
+                embedding_cache=cache).index(source())
+    assert second.embedded == 0              # every chunk served from cache
 
 
 def test_components_are_swappable():

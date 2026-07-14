@@ -35,6 +35,7 @@ multi-GB inputs. The parsed markdown is always small.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from dataclasses import dataclass, field
@@ -47,6 +48,7 @@ from .core.contracts import (
     Answer,
     Chunk,
     Document,
+    PageSpan,
     Query,
     ScoredChunk,
     Source,
@@ -101,6 +103,34 @@ def _noop_trace(event: TraceEvent) -> None:  # Null Object
     pass
 
 
+class _EmbeddingCache:
+    """Reuse vectors for text already embedded with this exact embedder.
+
+    Keyed by sha256(text) under the embedder's *fingerprint*, so identical text
+    (across documents or re-indexes) is embedded once, while swapping the
+    embedder/model is a clean miss — never a stale vector. Backed by any
+    `BlobStore` (local dir, MinIO); the cache knows how to (de)serialize, not
+    where the bytes live.
+    """
+
+    def __init__(self, store: BlobStore, embedder_fingerprint: str) -> None:
+        self._store = store
+        self._prefix = f"embeddings/{embedder_fingerprint}"
+
+    def _key(self, text: str) -> str:
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        return f"{self._prefix}/{digest}.json"
+
+    def get(self, text: str) -> Optional[list[float]]:
+        key = self._key(text)
+        if not self._store.exists(key):
+            return None
+        return json.loads(self._store.get(key).decode("utf-8"))
+
+    def put(self, text: str, vector: list[float]) -> None:
+        self._store.put(self._key(text), json.dumps(vector).encode("utf-8"))
+
+
 #: Canonical extension per known format — derived from the *detected* format,
 #: never the (possibly lying) filename. IMAGE/UNKNOWN fall back to the uri
 #: suffix since the concrete image type isn't carried in SourceFormat.
@@ -142,21 +172,44 @@ class IndexingPipeline:
             content_hash = source.content_hash() if self.blob_store else None
             if self.blob_store is not None and content_hash is not None:
                 self._store_raw(source, content_hash)
-            doc = self._parse(source)
+            doc = self._parse(source, content_hash)
             if self.blob_store is not None and content_hash is not None:
                 self._store_parsed(source, doc, content_hash)
             yield from self._chunk(source, doc)
 
     # -- stages --------------------------------------------------------------
 
-    def _parse(self, source: Source) -> Document:
+    def _parse(self, source: Source, content_hash: Optional[str]) -> Document:
         start = time.perf_counter()
-        doc = self.parser.parse(source)
+        # Parse-cache READ: if this exact (content × parser) was parsed before,
+        # load the Document from the blob store instead of re-parsing. The parser
+        # stays pure — the caching lives here, in the pipeline that owns the store.
+        doc: Optional[Document] = None
+        if self.blob_store is not None and content_hash is not None:
+            doc = self._load_parsed(content_hash)
+        hit = doc is not None
+        if doc is None:
+            doc = self.parser.parse(source)
         self.trace(TraceEvent(
             "parse", source.uri, _ms(start),
-            {"doc_id": doc.id, "pages": len(doc.pages)},
+            {"doc_id": doc.id, "pages": len(doc.pages), "cache_hit": hit},
         ))
         return doc
+
+    def _load_parsed(self, content_hash: str) -> Optional[Document]:
+        assert self.blob_store is not None
+        fp = self.parser.fingerprint()
+        md_key = f"parsed/{content_hash}/{fp}.md"
+        meta_key = f"parsed/{content_hash}/{fp}.meta.json"
+        if not (self.blob_store.exists(md_key) and self.blob_store.exists(meta_key)):
+            return None
+        markdown = self.blob_store.get(md_key).decode("utf-8")
+        meta = json.loads(self.blob_store.get(meta_key).decode("utf-8"))
+        pages = [PageSpan(p[0], p[1], p[2], p[3]) for p in meta["pages"]]
+        return Document(
+            id=meta["doc_id"], markdown=markdown, pages=pages,
+            source_uri=meta["source_uri"], metadata=meta["metadata"],
+        )
 
     def _chunk(self, source: Source, doc: Document) -> Iterator[Chunk]:
         start = time.perf_counter()
@@ -278,6 +331,7 @@ class RagPipeline:
         enricher: Optional[Enricher] = None,
         reranker: Optional[Reranker] = None,
         blob_store: Optional[BlobStore] = None,
+        embedding_cache: Optional[BlobStore] = None,
         fetch_k: int = 50,
         batch_size: int = 32,
         trace: TraceHook = _noop_trace,
@@ -288,6 +342,12 @@ class RagPipeline:
             generator if generator is not None else ExtractiveGenerator()
         )
         self.batch_size = batch_size
+        # Opt-in embedding cache: skip re-embedding text already vectorized with
+        # this exact embedder (keyed by the embedder's fingerprint).
+        self._emb_cache = (
+            _EmbeddingCache(embedding_cache, self.embedder.fingerprint())
+            if embedding_cache is not None else None
+        )
         self.indexing = IndexingPipeline(
             parser=parser, chunker=chunker, enricher=enricher,
             blob_store=blob_store, trace=trace,
@@ -316,8 +376,20 @@ class RagPipeline:
         return self.generator.generate(query, context)
 
     def _flush(self, chunks: list[Chunk]) -> None:
-        vectors = self.embedder.embed_texts([c.text for c in chunks])
-        self.store.upsert(chunks, vectors)
+        self.store.upsert(chunks, self._embed([c.text for c in chunks]))
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        if self._emb_cache is None:
+            return self.embedder.embed_texts(texts)
+        # Reuse cached vectors; embed only the misses, then cache them.
+        cached: list[Optional[list[float]]] = [self._emb_cache.get(t) for t in texts]
+        misses = [i for i, v in enumerate(cached) if v is None]
+        if misses:
+            fresh = self.embedder.embed_texts([texts[i] for i in misses])
+            for i, vector in zip(misses, fresh):
+                self._emb_cache.put(texts[i], vector)
+                cached[i] = vector
+        return [v for v in cached if v is not None]  # order preserved, all filled
 
 
 def _ms(start: float) -> float:

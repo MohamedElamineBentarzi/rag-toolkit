@@ -1,27 +1,38 @@
 """BM25Index: a zero-dependency in-memory Okapi BM25 lexical index.
 
 Pure-Python BM25 over dicts — the dependency-free lexical store for tests, small
-corpora, and the hermetic half of hybrid retrieval. Not built for large scale
-(a production deployment swaps in a tantivy/Elastic-backed LexicalIndex behind
-the same contract); built to be correct and obvious.
+corpora, and the hermetic half of hybrid retrieval. Not built for large scale (a
+production deployment swaps in a tantivy/Elastic-backed LexicalIndex behind the
+same contract); built to be correct and obvious.
 
-Design choice: document frequency is computed at query time from the stored
-per-document term counts, not maintained incrementally. That keeps `add`
-trivially idempotent by `chunk.id` (just overwrite the doc's postings — no df
-bookkeeping to unwind), at the cost of an O(docs) pass per query term. For the
-small-corpus niche this store targets, that trade is the right one.
+Design choices:
+- Document frequency is computed at query time from the stored per-document term
+  counts, not maintained incrementally — so there are no separate "parameters"
+  to keep in sync, and the persisted state is just (chunks, term-counts, lengths).
+- `add` is idempotent by `chunk.id`: an id already present is skipped (ids are
+  content-derived — `doc_id:index` — so a repeat id means identical text). This
+  makes re-ingesting overlapping batches, and re-adding after a `load`, cheap.
+
+Persistence (the "survives a restart" story): the index knows how to serialize
+itself, but NOT where the bytes live — that is delegated to an injected
+`BlobStore` (the same abstraction the pipeline's truth store uses). No store ⇒
+in-memory only (ephemeral); `LocalBlobStore` ⇒ on disk; `MinioBlobStore` ⇒ on an
+S3-compatible server. The index only ever sees `put`/`get`/`exists`, so it never
+knows or cares about the storage vendor.
 """
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Optional, Sequence
 
 from ..core.contracts import Chunk, ScoredChunk
 from ..core.registry import registry
+from .base import BlobStore
 from .lexical_index import LexicalIndex
 
 __all__ = ["BM25Index"]
@@ -42,15 +53,23 @@ class BM25Index(LexicalIndex):
     class Config:
         k1: float = 1.5   # term-frequency saturation
         b: float = 0.75   # length normalization strength
+        #: Key namespace under which the index persists in the blob store.
+        namespace: str = "default"
 
-    def __init__(self, config: Any = None, **overrides: Any) -> None:
+    def __init__(
+        self, store: Optional[BlobStore] = None, config: Any = None,
+        **overrides: Any,
+    ) -> None:
         super().__init__(config, **overrides)
+        self._store = store  # where persist()/load() read & write (None ⇒ memory)
         self._chunks: dict[str, Chunk] = {}
         self._tf: dict[str, Counter] = {}
         self._len: dict[str, int] = {}
 
     def add(self, chunks: Sequence[Chunk]) -> None:
         for chunk in chunks:
+            if chunk.id in self._chunks:
+                continue  # idempotent: same id ⇒ same content, nothing to do
             tokens = _tokenize(chunk.text)
             self._chunks[chunk.id] = chunk
             self._tf[chunk.id] = Counter(tokens)
@@ -76,6 +95,38 @@ class BM25Index(LexicalIndex):
                 scored.append(ScoredChunk(chunk=chunk, score=score))
         scored.sort(key=lambda sc: (sc.score, sc.chunk.id), reverse=True)
         return scored[:k]
+
+    # -- persistence ---------------------------------------------------------
+
+    def persist(self) -> None:
+        """Serialize the index to the injected blob store (no-op without one)."""
+        if self._store is None:
+            return
+        self._store.put(self._key, self._serialize())
+
+    def load(self) -> None:
+        """Rehydrate from the blob store if a saved index exists (else no-op)."""
+        if self._store is None or not self._store.exists(self._key):
+            return
+        self._deserialize(self._store.get(self._key))
+
+    @property
+    def _key(self) -> str:
+        return f"lexical/{self.config.namespace}/bm25.json"
+
+    def _serialize(self) -> bytes:
+        data = {
+            "chunks": {cid: asdict(c) for cid, c in self._chunks.items()},
+            "tf": {cid: dict(tf) for cid, tf in self._tf.items()},
+            "len": self._len,
+        }
+        return json.dumps(data).encode("utf-8")
+
+    def _deserialize(self, blob: bytes) -> None:
+        data = json.loads(blob.decode("utf-8"))
+        self._chunks = {cid: Chunk(**c) for cid, c in data["chunks"].items()}
+        self._tf = {cid: Counter(tf) for cid, tf in data["tf"].items()}
+        self._len = {cid: int(n) for cid, n in data["len"].items()}
 
     # -- BM25 math -----------------------------------------------------------
 

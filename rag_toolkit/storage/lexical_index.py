@@ -36,3 +36,10 @@ class LexicalIndex(Component):
         self, text: str, k: int, filters: Optional[dict] = None
     ) -> list[ScoredChunk]:
         """Return up to `k` chunks most relevant to `text`, highest first."""
+
+    def persist(self) -> None:
+        """Flush the index to durable storage. Default: nothing to do (an
+        in-memory index with no backing store is ephemeral)."""
+
+    def load(self) -> None:
+        """Rehydrate the index from durable storage. Default: nothing to do."""
