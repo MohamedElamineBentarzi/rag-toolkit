@@ -19,6 +19,36 @@ pip install "rag-toolkit[minio]"             # + MinIO / S3-compatible storage
 
 The core has **zero dependencies**; vendor SDKs are optional extras.
 
+### GPU acceleration
+
+Only the local-model components use a GPU — `SentenceTransformerEmbedder`,
+`BgeReranker`, and `DoclingParser`'s layout models. GPU-ness is a property of
+*how PyTorch is installed*, not of a toolkit extra: the CUDA wheels live on
+PyTorch's own index, not PyPI, so a pip extra can't pull them. What to do
+depends on your OS:
+
+```bash
+# Linux (NVIDIA): CUDA torch already comes from PyPI — nothing special.
+pip install "rag-toolkit[sentence-transformers]"
+
+# Windows / macOS: PyPI's torch is CPU-only. Install a CUDA torch FIRST,
+# then the extras (pip leaves the already-satisfied torch alone):
+pip install torch --index-url https://download.pytorch.org/whl/cu126   # match your CUDA
+pip install "rag-toolkit[sentence-transformers]"
+```
+
+Verify: `python -c "import torch; print(torch.cuda.is_available())"` → `True`.
+
+**Install order matters.** Any later `pip install <torch-dependent-package>` on
+its own can re-resolve `torch` and pull the CPU wheel back from PyPI, clobbering
+your CUDA build — so install the CUDA torch **last**, or re-run it if a later
+install flips `torch.cuda.is_available()` back to `False`.
+[`requirements-gpu.txt`](requirements-gpu.txt) captures the CUDA-torch install
+(edit the `cu126` tag to match your driver — see `nvidia-smi`).
+
+There is deliberately **no `[all-gpu]` extra**: it would be redundant on Linux
+and misleading on Windows/macOS (pip extras can't select PyTorch's CUDA index).
+
 ## Quick start
 
 ```python
