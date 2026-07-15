@@ -31,6 +31,7 @@ import hashlib
 import json
 from typing import Callable, Sequence
 
+from ..core.errors import EmbeddingError
 from ..storage.base import BlobStore
 from .base import Embedder
 
@@ -93,6 +94,14 @@ class CachingEmbedder(Embedder):
         misses = [i for i, v in enumerate(cached) if v is None]
         if misses:
             fresh = encode([texts[i] for i in misses])
+            # A short return from a misbehaving inner embedder would otherwise
+            # zip-truncate silently, and the final filter would shorten the
+            # result and misalign it with `texts` — corrupt, not crashing.
+            if len(fresh) != len(misses):
+                raise EmbeddingError(
+                    f"inner embedder returned {len(fresh)} vectors for "
+                    f"{len(misses)} texts; cannot align cache"
+                )
             for i, vector in zip(misses, fresh):
                 self._put(namespace, texts[i], vector)
                 cached[i] = vector

@@ -29,27 +29,40 @@ from typing import Any, ClassVar, Optional, Type
 from .errors import ConfigError
 
 
+__all__ = ["Component"]
+
+# Field/key names containing these substrings are redacted from
+# describe()/fingerprint(): secrets must never leak into logs or cache keys,
+# and rotating an API key must not invalidate caches.
+_SECRET_MARKERS = (
+    "key", "token", "secret", "password", "credential", "authorization",
+)
+
+
+def _is_secret_key(name: Any) -> bool:
+    return isinstance(name, str) and any(m in name.lower() for m in _SECRET_MARKERS)
+
+
 def _plain(value: Any) -> Any:
     """Normalize config values to log/JSON-friendly primitives.
 
     Enums become their `.value` (so `OcrPolicy.AUTO` logs as "auto"), and
-    containers are walked recursively. Keeps describe() output — and thus
-    trial logs — clean and diffable.
+    containers are walked recursively. Dict keys that look like secrets are
+    redacted *at every depth* — a token tucked inside a `headers={"authorization":
+    ...}` or an `extra={}` bag must not sail into describe()/fingerprint() just
+    because the top-level field name looked innocent. Keeps trial logs clean and
+    diffable, and keeps secrets out of cache keys.
     """
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, dict):
-        return {k: _plain(v) for k, v in value.items()}
+        return {
+            k: "<redacted>" if _is_secret_key(k) else _plain(v)
+            for k, v in value.items()
+        }
     if isinstance(value, (list, tuple)):
         return [_plain(v) for v in value]
     return value
-
-__all__ = ["Component"]
-
-# Config field names containing these substrings are redacted from
-# describe()/fingerprint(): secrets must never leak into logs or cache keys,
-# and rotating an API key must not invalidate caches.
-_SECRET_MARKERS = ("key", "token", "secret", "password", "credential")
 
 
 class Component(ABC):
@@ -118,8 +131,7 @@ class Component(ABC):
         cfg: dict[str, Any] = {}
         if self.config is not None:
             for k, v in dataclasses.asdict(self.config).items():
-                lowered = k.lower()
-                if any(m in lowered for m in _SECRET_MARKERS):
+                if _is_secret_key(k):
                     cfg[k] = "<redacted>"
                 else:
                     cfg[k] = _plain(v)

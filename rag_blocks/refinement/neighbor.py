@@ -86,9 +86,12 @@ class NeighborExpander(Refiner):
         hi = anchor.index + window
         missing = [i for i in range(lo, hi + 1) if i not in by_index]
         if missing:
+            # Headroom: a synthetic chunk matching this membership filter would
+            # consume a limit slot and silently displace a real neighbor
+            # (order-dependent context loss). Over-fetch, then drop synthetics.
             fetched = self.index.fetch(
                 {"doc_id": anchor.doc_id, "index": missing},
-                limit=len(missing),
+                limit=len(missing) * 2,
             )
             for c in fetched:
                 if c.metadata.get("synthetic"):

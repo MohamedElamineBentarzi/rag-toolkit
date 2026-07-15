@@ -185,6 +185,11 @@ def ingest(path: str | Path, **docling_overrides) -> Document:
 
     For full control (custom routes, streaming, in-memory sources), drop one
     level down to AutoParser / DoclingParser directly.
+
+    Batch note: this builds a fresh ``AutoParser`` every call, which reloads the
+    docling layout models per file. To ingest many documents, hold one parser
+    and reuse it — ``p = AutoParser(); [p.parse(Source.from_path(f)) for f in files]``
+    — so the expensive models load once.
     """
     parser_configs = {"docling": docling_overrides} if docling_overrides else {}
     parser = AutoParser(parser_configs=parser_configs)

@@ -41,7 +41,11 @@ def pack_context(
     for marker, scored in enumerate(context, start=1):
         chunk = scored.chunk
         block = f"[{marker}] {chunk.text}"
-        if blocks and used + len(block) > max_chars:
+        # Blocks are joined by "\n\n" in the final string, so every block after
+        # the first costs its length plus the 2-char joiner — count it, or the
+        # budget is understated by 2*(n-1).
+        cost = len(block) + (2 if blocks else 0)
+        if blocks and used + cost > max_chars:
             break  # keep at least one chunk even if it exceeds the budget
         blocks.append(block)
         texts.append(chunk.text)
@@ -49,7 +53,7 @@ def pack_context(
             marker=marker, chunk_id=chunk.id, doc_id=chunk.doc_id,
             page_start=chunk.page_start, page_end=chunk.page_end,
         ))
-        used += len(block)
+        used += cost
     return PackedContext("\n\n".join(blocks), citations, texts)
 
 
