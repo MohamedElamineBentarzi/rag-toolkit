@@ -35,6 +35,7 @@ from typing import Any, Optional, Sequence
 from ..core.contracts import Chunk, ScoredChunk
 from ..core.registry import registry
 from .base import BlobStore
+from .filters import matches
 from .lexical_index import LexicalIndex
 
 __all__ = ["BM25Index"]
@@ -91,7 +92,7 @@ class BM25Index(LexicalIndex):
         scored: list[ScoredChunk] = []
         for chunk_id, tf in self._tf.items():
             chunk = self._chunks[chunk_id]
-            if filters and not _matches(chunk, filters):
+            if filters and not matches(chunk, filters):
                 continue
             score = self._score(query_terms, tf, self._len[chunk_id], avgdl, idf)
             if score > 0.0:
@@ -151,17 +152,3 @@ class BM25Index(LexicalIndex):
             denom = freq + k1 * (1 - b + b * dl / avgdl)
             score += idf[term] * (freq * (k1 + 1)) / denom
         return score
-
-
-def _matches(chunk: Chunk, filters: dict) -> bool:
-    """Shared filter semantics (D3): scalar ⇒ equality, list ⇒ membership."""
-    for key, expected in filters.items():
-        actual = getattr(chunk, key, None)
-        if actual is None:
-            actual = chunk.metadata.get(key)
-        if isinstance(expected, (list, tuple, set)):
-            if actual not in expected:
-                return False
-        elif actual != expected:
-            return False
-    return True
