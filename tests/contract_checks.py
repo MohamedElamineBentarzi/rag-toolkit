@@ -21,7 +21,7 @@ from rag_blocks.core.contracts import (
     Source,
     VectorSpec,
 )
-from rag_blocks.core.errors import RagToolkitError, StorageError
+from rag_blocks.core.errors import RagBlocksError, StorageError
 from rag_blocks.embedding.base import Embedder
 from rag_blocks.enrichment.base import Enricher
 from rag_blocks.generation.base import Generator
@@ -209,7 +209,7 @@ def assert_vector_store_contract(store: VectorStore, dimensions: int = 8) -> Non
     # Re-declaring the same schema validates and is a no-op (not an error).
     store.ensure_schema([spec])
     # A conflicting redeclaration must fail loudly, never coerce.
-    with pytest.raises(RagToolkitError):
+    with pytest.raises(RagBlocksError):
         store.ensure_schema([VectorSpec("dense", "dense", dimensions + 1)])
 
     # 1. Empty store: search yields nothing (not an error).
@@ -333,7 +333,7 @@ def assert_index_contract(index) -> None:
         assert len(index.search(rep, "quick", k=10)) <= len(chunks)
 
     # 5. Unknown representation fails loudly.
-    with pytest.raises(RagToolkitError):
+    with pytest.raises(RagBlocksError):
         index.search("no-such-representation", "quick", k=1)
 
     # 6. Deterministic identity.

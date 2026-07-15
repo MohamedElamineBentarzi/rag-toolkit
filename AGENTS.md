@@ -459,7 +459,7 @@ a kind.
 - Lazy vendor imports, exact idiom: import inside the method that needs it,
   wrap `ImportError`, raise a toolkit error naming the extra:
   `"... requires 'docling'. Install with: pip install 'rag-blocks[docling]'"`.
-- Errors: single root `RagToolkitError`; raise narrow subclasses with context
+- Errors: single root `RagBlocksError`; raise narrow subclasses with context
   (`ParseError(msg, source_uri=..., page_number=...)`) — "PDF failed" is
   useless in a 10k-document batch. Fail fast at construction (unknown engine
   name explodes in `__init__`, not on page 500). Never swallow exceptions

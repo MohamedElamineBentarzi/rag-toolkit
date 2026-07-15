@@ -21,7 +21,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Optional
 
 from ..core.contracts import Query, ScoredChunk
-from ..core.errors import RagToolkitError
+from ..core.errors import RagBlocksError
 from ..core.registry import registry
 from .base import Refiner
 
@@ -63,7 +63,7 @@ class CrossEncoderReranker(Refiner):
             try:
                 from sentence_transformers import CrossEncoder  # lazy
             except ImportError as exc:
-                raise RagToolkitError(
+                raise RagBlocksError(
                     "CrossEncoderReranker requires 'sentence-transformers'. "
                     "Install with: pip install 'rag-blocks[sentence-transformers]'"
                 ) from exc

@@ -29,7 +29,7 @@ from .errors import (
     GenerationError,
     OcrError,
     ParseError,
-    RagToolkitError,
+    RagBlocksError,
     StorageError,
     UnsupportedFormatError,
 )
@@ -52,7 +52,7 @@ __all__ = [
     "SparseVector",
     "VectorSpec",
     "VectorValue",
-    "RagToolkitError",
+    "RagBlocksError",
     "ComponentNotFoundError",
     "DuplicateComponentError",
     "ConfigError",
