@@ -9,9 +9,11 @@ Design choices:
 - Document frequency is computed at query time from the stored per-document term
   counts, not maintained incrementally — so there are no separate "parameters"
   to keep in sync, and the persisted state is just (chunks, term-counts, lengths).
-- `add` is idempotent by `chunk.id`: an id already present is skipped (ids are
-  content-derived — `doc_id:index` — so a repeat id means identical text). This
-  makes re-ingesting overlapping batches, and re-adding after a `load`, cheap.
+- `add` is *upsert* by `chunk.id`, mirroring `VectorStore.upsert`: re-adding an
+  id recomputes its term counts and length. Ids are `doc_id:index`, but the text
+  behind an id is NOT stable — a chunker config change or an enricher rewrites
+  the text under the same id — so overwrite (not skip) is what keeps a persisted
+  lexical namespace consistent with the vector side after a re-index.
 
 Persistence (the "survives a restart" story): the index knows how to serialize
 itself, but NOT where the bytes live — that is delegated to an injected
@@ -47,7 +49,7 @@ def _tokenize(text: str) -> list[str]:
 @registry.register
 class BM25Index(LexicalIndex):
     name = "bm25"
-    version = "0.1.0"
+    version = "0.2.0"  # 0.2.0: add() upserts instead of skipping existing ids
 
     @dataclass
     class Config:
@@ -67,9 +69,10 @@ class BM25Index(LexicalIndex):
         self._len: dict[str, int] = {}
 
     def add(self, chunks: Sequence[Chunk]) -> None:
+        # Upsert by id: overwrite recomputes tf/len so re-adding an id with new
+        # text (re-chunk, enrich) wins, matching VectorStore.upsert. Re-adding
+        # identical text is a harmless no-op (same counts recomputed).
         for chunk in chunks:
-            if chunk.id in self._chunks:
-                continue  # idempotent: same id ⇒ same content, nothing to do
             tokens = _tokenize(chunk.text)
             self._chunks[chunk.id] = chunk
             self._tf[chunk.id] = Counter(tokens)

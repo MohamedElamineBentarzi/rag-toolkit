@@ -8,6 +8,7 @@ inherits every guarantee the rest of the pipeline relies on.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 
 import pytest
 
@@ -235,6 +236,15 @@ def assert_vector_store_contract(store: VectorStore, dimensions: int = 8) -> Non
     store.upsert(chunks, {"dense": dense})
     assert len(store.search("dense", unit(0), k=10)) == 3
 
+    # 4b. Upsert is by id and content-replacing: re-upserting an existing id
+    #     with different text overwrites the stored chunk (A1 — the vector and
+    #     lexical sides must agree on this so a re-index can't desync them).
+    reworded = replace(chunks[0], text="a completely different chunk body")
+    store.upsert([reworded], {"dense": [unit(0)]})
+    refetched = store.fetch({"doc_id": "d", "index": 0}, limit=1)
+    assert refetched and refetched[0].text == "a completely different chunk body"
+    store.upsert(chunks, {"dense": dense})  # restore for later steps
+
     # 5. Equality filters narrow the result set.
     filtered = store.search("dense", unit(1), k=10, filters={"index": 1})
     assert filtered and all(r.chunk.index == 1 for r in filtered)
@@ -286,6 +296,15 @@ def assert_lexical_index_contract(index: LexicalIndex) -> None:
     # 4. k respected; re-adding the same ids doesn't duplicate.
     index.add(chunks)
     assert len(index.search("quick", k=10)) <= 3
+
+    # 4b. add() is upsert, not skip-if-present: re-adding an id with different
+    #     text overwrites — the new text becomes searchable and the stale text
+    #     disappears (A1). "fox" lived only in d:0; after rewording it, nothing
+    #     should match it, and the new term should.
+    index.add([replace(chunks[0], text="parliament ratified the trade treaty")])
+    assert index.search("parliament", k=5), "new text under an existing id must win"
+    assert index.search("fox", k=5) == [], "stale text under a reused id must be gone"
+    index.add(chunks)  # restore for later steps
 
     # 5. Filters narrow the set.
     filtered = index.search("quarter", k=10, filters={"index": 2})
