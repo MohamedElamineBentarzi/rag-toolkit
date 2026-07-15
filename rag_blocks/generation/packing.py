@@ -5,7 +5,7 @@ mechanical work regardless of how the answer is actually produced: number the
 retrieved chunks `[1]`, `[2]`, … within a character budget, and afterwards map
 the markers that appear in the answer back to source provenance.
 
-This is what makes citations honest end-to-end: the marker in the text and the
+This is what makes citations verifiable end-to-end: the marker in the text and the
 `Citation`'s `doc_id`/pages come from the *same* packed chunk, so "[2]" in an
 answer resolves to exact pages of an exact document.
 """

@@ -1,13 +1,13 @@
 """MemoryVectorStore: an in-process, zero-dependency, multi-vector index.
 
 Pure-Python search over dicts — cosine for dense spaces, dot product for
-sparse ones. Not built for scale — built to be the honest, dependency-free
+sparse ones. Not built for scale — built to be the dependency-free
 store that the test suite and the auto-tuner lean on for small corpora, and the
 *reference implementation* of the `vector_store` contract (v2): named+typed
 multi-vector spaces, `fetch` without a query vector, and `update_vectors`.
 Pairs naturally with `HashingEmbedder` for a fully hermetic index→search loop.
 
-Idempotency falls out for free: everything is keyed by `chunk.id` (deterministic
+Idempotency is inherent: everything is keyed by `chunk.id` (deterministic
 `doc_id:index`), so re-upserting overwrites. Ephemeral by design — `persist` is
 a no-op; reach for `qdrant` when you need durability or scale.
 """

@@ -22,7 +22,7 @@ Two correctness rules make the decorator invisible where it must be:
 
 Keys are `embeddings/{inner.fingerprint()}/{passages|queries}/{sha256(text)}.json`
 — folding the inner fingerprint in means swapping the model is a clean miss, and
-P8's "N representations ⇒ N cache keyspaces" falls out for free.
+P8's "N representations ⇒ N cache keyspaces" follows automatically.
 """
 
 from __future__ import annotations

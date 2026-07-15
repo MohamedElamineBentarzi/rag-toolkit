@@ -18,7 +18,7 @@ at once — a dense embedding *and* a static sparse (SPLADE) vector, or two dens
 models being A/B'd. Rather than one store per representation kept consistent by
 convention, a store holds N *named, typed* vector spaces per point. The owning
 `ChunkIndex` declares those spaces up front; the store's job is to store, search
-and fetch them honestly.
+and fetch them directly.
 
 Contract:
 - `ensure_schema(specs)` — declare the named vector spaces. Create them, or

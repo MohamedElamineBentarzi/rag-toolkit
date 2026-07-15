@@ -65,8 +65,8 @@ class OcrResult:
     `markdown` because that is the toolkit's lingua franca. Engines that only
     produce plain text return it as-is (valid markdown). `confidence` is
     optional — many APIs don't expose one — but when present the eval suite
-    can correlate answer quality with OCR confidence, which is a genuinely
-    useful diagnostic. `raw` keeps the untouched provider payload for
+    can correlate answer quality with OCR confidence, which is a useful
+    diagnostic. `raw` keeps the untouched provider payload for
     debugging without polluting the contract.
     """
 

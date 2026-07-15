@@ -10,7 +10,7 @@ AGENTS.md's "ABCs, not Protocols" rule governs *stage contracts*, which carry
 inherited plumbing (config, fingerprint). `ChunkSink` is a *capability seam*
 spanning worlds a common base cannot reach (a `ChunkIndex` and a third-party
 graph store share no ancestor): shape is exactly what is meant here, so
-structural typing is the honest tool. The rule is refined, not broken.
+structural typing is the right tool. The rule is refined, not broken.
 """
 
 from __future__ import annotations

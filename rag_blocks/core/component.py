@@ -10,7 +10,7 @@ gives the evaluation suite a uniform way to describe/cache/compare components
 without knowing anything about them (Dependency Inversion: the tuner depends
 on `Component`, never on `DoclingParser`).
 
-The fingerprint is the quiet superpower: sha256(kind | name | version |
+The fingerprint is what makes cross-pipeline caching work: sha256(kind | name | version |
 canonical-config). Two pipeline variants that share the same parser config
 share the same fingerprint ⇒ the tuner can reuse the cached parse output
 instead of re-parsing 5 GB of PDFs per combination. Bump `version` whenever

@@ -10,7 +10,7 @@ the blob store is the one thing you must not lose.
 
 Deliberately tiny interface (Interface Segregation): ``put`` / ``get`` /
 ``exists`` over opaque string keys. That is the whole contract. Two consequences
-worth stating out loud, because they are design decisions, not omissions:
+worth stating explicitly, because they are design decisions, not omissions:
 
 - **The store attaches no meaning to keys.** The content-addressed layout
   (hashing a Source, choosing ``raw/…`` vs ``parsed/…``) lives in the *caller*

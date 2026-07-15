@@ -3,7 +3,7 @@
 The default ``BlobStore``: files under a root directory, keys mapped straight
 to nested paths (``raw/ab12…/original.pdf`` → ``<root>/raw/ab12…/original.pdf``).
 No vendor SDK, no server, no network — this is the batteries-included store you
-get for free, and the one the test/tuning suites use.
+get out of the box, and the one the test/tuning suites use.
 
 Two bits of deliberate care beyond a naive ``open().write()``:
 
