@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from rag_toolkit.core.registry import registry
-from rag_toolkit.ingestion.ocr.base import OcrEngine, OcrResult, PageImage
+from rag_blocks.core.registry import registry
+from rag_blocks.ingestion.ocr.base import OcrEngine, OcrResult, PageImage
 
 
 class FakeOcrEngine(OcrEngine):

@@ -1,7 +1,7 @@
 """ScoreThreshold: drop candidates below a relevance floor."""
-from rag_toolkit.core.contracts import Chunk, Query, ScoredChunk
-from rag_toolkit.core.registry import registry
-from rag_toolkit.refinement.threshold import ScoreThreshold
+from rag_blocks.core.contracts import Chunk, Query, ScoredChunk
+from rag_blocks.core.registry import registry
+from rag_blocks.refinement.threshold import ScoreThreshold
 from tests.contract_checks import assert_refiner_contract
 
 

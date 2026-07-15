@@ -1,8 +1,8 @@
 """ExtractiveGenerator + context packing (fully hermetic)."""
-from rag_toolkit.core.contracts import Chunk, Query, ScoredChunk
-from rag_toolkit.core.registry import registry
-from rag_toolkit.generation.extractive import ExtractiveGenerator
-from rag_toolkit.generation.packing import pack_context, resolve_citations
+from rag_blocks.core.contracts import Chunk, Query, ScoredChunk
+from rag_blocks.core.registry import registry
+from rag_blocks.generation.extractive import ExtractiveGenerator
+from rag_blocks.generation.packing import pack_context, resolve_citations
 from tests.contract_checks import assert_generator_contract
 
 

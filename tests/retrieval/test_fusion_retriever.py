@@ -1,11 +1,11 @@
 """FusionRetriever: RRF over arbitrary retrievers, plus the fuse() mechanics."""
 import pytest
 
-from rag_toolkit.core.contracts import Chunk, Query, ScoredChunk
-from rag_toolkit.core.errors import ConfigError
-from rag_toolkit.retrieval.base import Retriever
-from rag_toolkit.retrieval.fusion import fuse, source_labels
-from rag_toolkit.retrieval.fusion_retriever import FusionRetriever
+from rag_blocks.core.contracts import Chunk, Query, ScoredChunk
+from rag_blocks.core.errors import ConfigError
+from rag_blocks.retrieval.base import Retriever
+from rag_blocks.retrieval.fusion import fuse, source_labels
+from rag_blocks.retrieval.fusion_retriever import FusionRetriever
 
 
 def chunk(i):

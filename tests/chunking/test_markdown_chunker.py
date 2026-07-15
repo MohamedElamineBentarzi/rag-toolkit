@@ -1,7 +1,7 @@
 """MarkdownChunker: cuts on heading boundaries."""
-from rag_toolkit.chunking.markdown import MarkdownChunker
-from rag_toolkit.core.contracts import Source
-from rag_toolkit.ingestion.parsers.plaintext import PlainTextParser
+from rag_blocks.chunking.markdown import MarkdownChunker
+from rag_blocks.core.contracts import Source
+from rag_blocks.ingestion.parsers.plaintext import PlainTextParser
 from tests.contract_checks import assert_chunker_contract
 
 

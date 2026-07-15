@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from rag_toolkit.storage.minio_store import MinioBlobStore
+from rag_blocks.storage.minio_store import MinioBlobStore
 from tests.contract_checks import assert_blob_store_contract
 
 pytestmark = pytest.mark.integration
@@ -28,7 +28,7 @@ def store():
         pytest.skip("set MINIO_ENDPOINT (+ MINIO_ACCESS_KEY/MINIO_SECRET_KEY)")
     return MinioBlobStore(
         endpoint=endpoint,
-        bucket=os.environ.get("MINIO_BUCKET", "rag-toolkit-tests"),
+        bucket=os.environ.get("MINIO_BUCKET", "rag-blocks-tests"),
         secure=os.environ.get("MINIO_SECURE", "false").lower() == "true",
     )
 

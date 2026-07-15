@@ -5,8 +5,8 @@ markdown); our contract speaks (PageImage → OcrResult). This class is the
 translation layer and nothing else — no PDF logic, no page routing.
 
 Dependency handling: `mistralai` is imported lazily inside the method, and
-declared as the optional extra `rag-toolkit[mistral]`. Users who never touch
-Mistral pay zero install cost, and importing rag_toolkit never fails because
+declared as the optional extra `rag-blocks[mistral]`. Users who never touch
+Mistral pay zero install cost, and importing rag_blocks never fails because
 one vendor SDK is missing ("batteries optional").
 
 NOTE: written against the mistralai>=1.x SDK shape
@@ -57,7 +57,7 @@ class MistralOcrEngine(OcrEngine):
             except ImportError as exc:
                 raise OcrError(
                     "MistralOcrEngine requires the 'mistralai' package. "
-                    "Install with: pip install 'rag-toolkit[mistral]'"
+                    "Install with: pip install 'rag-blocks[mistral]'"
                 ) from exc
             api_key = self.config.api_key or os.environ.get("MISTRAL_API_KEY")
             if not api_key:

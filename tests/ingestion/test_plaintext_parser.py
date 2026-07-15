@@ -1,6 +1,6 @@
 """PlainTextParser: streaming discipline on the simplest possible format."""
-from rag_toolkit.core.contracts import Source
-from rag_toolkit.ingestion.parsers.plaintext import _BLOCK_SIZE, PlainTextParser
+from rag_blocks.core.contracts import Source
+from rag_blocks.ingestion.parsers.plaintext import _BLOCK_SIZE, PlainTextParser
 from tests.contract_checks import assert_parser_contract
 
 

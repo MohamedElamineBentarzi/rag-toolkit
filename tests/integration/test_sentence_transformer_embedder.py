@@ -2,8 +2,8 @@
 
 Needs the extra installed and will download the model on first run:
 
-    pip install 'rag-toolkit[sentence-transformers]'
-    RAG_TOOLKIT_TEST_ST_MODEL=sentence-transformers/all-MiniLM-L6-v2 \
+    pip install 'rag-blocks[sentence-transformers]'
+    rag_blocks_TEST_ST_MODEL=sentence-transformers/all-MiniLM-L6-v2 \
         pytest -m integration tests/integration/test_sentence_transformer_embedder.py
 
 A small model is used by default (fast, ~80 MB) rather than the bge-m3 default.
@@ -12,13 +12,13 @@ import os
 
 import pytest
 
-from rag_toolkit.embedding.sentence_transformer import SentenceTransformerEmbedder
+from rag_blocks.embedding.sentence_transformer import SentenceTransformerEmbedder
 from tests.contract_checks import assert_embedder_contract
 
 pytestmark = pytest.mark.integration
 
 _MODEL = os.environ.get(
-    "RAG_TOOLKIT_TEST_ST_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
+    "rag_blocks_TEST_ST_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
 )
 
 

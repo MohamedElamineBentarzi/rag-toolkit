@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to rag-toolkit are documented here. Pre-1.0, breaking
+All notable changes to rag-blocks are documented here. Pre-1.0, breaking
 changes are expected between minor versions.
 
 ## [0.6.0] — DR-0001 v2: ChunkIndex, composition algebra, multi-representation

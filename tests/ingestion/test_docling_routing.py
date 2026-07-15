@@ -8,10 +8,10 @@ our integration tests' job).
 """
 import pytest
 
-from rag_toolkit.core.contracts import Source
-from rag_toolkit.core.errors import ComponentNotFoundError
-from rag_toolkit.ingestion.ocr.base import OcrPolicy
-from rag_toolkit.ingestion.parsers.docling_parser import (
+from rag_blocks.core.contracts import Source
+from rag_blocks.core.errors import ComponentNotFoundError
+from rag_blocks.ingestion.ocr.base import OcrPolicy
+from rag_blocks.ingestion.parsers.docling_parser import (
     DoclingParser,
     _image_mime,
     _windows,

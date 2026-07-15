@@ -1,13 +1,13 @@
 """IndexRetriever: a read-only view over one representation of a ChunkIndex."""
 import pytest
 
-from rag_toolkit.core.contracts import Chunk, Query
-from rag_toolkit.core.errors import ConfigError
-from rag_toolkit.embedding.hashing import HashingEmbedder
-from rag_toolkit.indexing.chunk_index import ChunkIndex
-from rag_toolkit.retrieval.index_retriever import IndexRetriever
-from rag_toolkit.storage.bm25_index import BM25Index
-from rag_toolkit.storage.memory_store import MemoryVectorStore
+from rag_blocks.core.contracts import Chunk, Query
+from rag_blocks.core.errors import ConfigError
+from rag_blocks.embedding.hashing import HashingEmbedder
+from rag_blocks.indexing.chunk_index import ChunkIndex
+from rag_blocks.retrieval.index_retriever import IndexRetriever
+from rag_blocks.storage.bm25_index import BM25Index
+from rag_blocks.storage.memory_store import MemoryVectorStore
 from tests.contract_checks import assert_retriever_contract
 
 _TEXTS = [

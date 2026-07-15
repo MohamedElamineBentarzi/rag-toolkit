@@ -4,8 +4,8 @@ import zipfile
 
 import pytest
 
-from rag_toolkit.core.contracts import Source, SourceFormat
-from rag_toolkit.ingestion.detection import detect_format
+from rag_blocks.core.contracts import Source, SourceFormat
+from rag_blocks.ingestion.detection import detect_format
 
 
 def zip_with(member: str) -> bytes:

@@ -1,10 +1,10 @@
 """MemoryVectorStore: pure-Python multi-vector index, fully hermetic."""
 import pytest
 
-from rag_toolkit.core.contracts import Chunk, SparseVector, VectorSpec
-from rag_toolkit.core.errors import ConfigError, StorageError
-from rag_toolkit.core.registry import registry
-from rag_toolkit.storage.memory_store import MemoryVectorStore
+from rag_blocks.core.contracts import Chunk, SparseVector, VectorSpec
+from rag_blocks.core.errors import ConfigError, StorageError
+from rag_blocks.core.registry import registry
+from rag_blocks.storage.memory_store import MemoryVectorStore
 from tests.contract_checks import assert_vector_store_contract
 
 

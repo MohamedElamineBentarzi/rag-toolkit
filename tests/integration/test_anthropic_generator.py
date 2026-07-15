@@ -1,6 +1,6 @@
 """AnthropicGenerator against the real Claude API. Opt-in.
 
-    pip install 'rag-toolkit[anthropic]'
+    pip install 'rag-blocks[anthropic]'
     ANTHROPIC_API_KEY=... pytest -m integration \
         tests/integration/test_anthropic_generator.py
 """
@@ -8,8 +8,8 @@ import os
 
 import pytest
 
-from rag_toolkit.core.contracts import Chunk, Query, ScoredChunk
-from rag_toolkit.generation.anthropic_generator import AnthropicGenerator
+from rag_blocks.core.contracts import Chunk, Query, ScoredChunk
+from rag_blocks.generation.anthropic_generator import AnthropicGenerator
 from tests.contract_checks import assert_generator_contract
 
 pytestmark = pytest.mark.integration

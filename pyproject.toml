@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rag-toolkit"
+name = "rag_blocks"
 version = "0.6.0"
 description = "Composable building blocks for production RAG pipelines, with an auto-tuning evaluation suite."
 readme = "README.md"
@@ -35,15 +35,15 @@ sentence-transformers = ["sentence-transformers>=3.0"]
 qdrant = ["qdrant-client>=1.10"]
 anthropic = ["anthropic>=0.40"]
 all = [
-    "rag-toolkit[docling,mistral,google,minio,sentence-transformers,qdrant,anthropic]"
+    "rag_blocks[docling,mistral,google,minio,sentence-transformers,qdrant,anthropic]"
 ]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11"]
 
 [project.urls]
-Homepage = "https://github.com/voidlab/rag-toolkit"
+Homepage = "https://github.com/MohamedElamineBentarzi/rag-blocks"
 
 [tool.hatch.build.targets.wheel]
-packages = ["rag_toolkit"]
+packages = ["rag_blocks"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

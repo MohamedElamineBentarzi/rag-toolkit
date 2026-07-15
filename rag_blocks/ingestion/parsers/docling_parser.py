@@ -418,7 +418,7 @@ class DoclingParser(Parser):
             except ImportError as exc:
                 raise ParseError(
                     "DoclingParser requires 'docling'. "
-                    "Install with: pip install 'rag-toolkit[docling]'"
+                    "Install with: pip install 'rag-blocks[docling]'"
                 ) from exc
             self._dl_modules = (dc, bm, po)
         return self._dl_modules
@@ -430,7 +430,7 @@ class DoclingParser(Parser):
             except ImportError as exc:
                 raise ParseError(
                     "PDF handling requires 'pypdfium2' (ships with docling). "
-                    "Install with: pip install 'rag-toolkit[docling]'"
+                    "Install with: pip install 'rag-blocks[docling]'"
                 ) from exc
             self._pdfium = pdfium
         return self._pdfium

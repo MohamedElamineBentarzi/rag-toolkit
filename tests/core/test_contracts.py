@@ -1,7 +1,7 @@
 """Contracts are the load-bearing walls — they get the most paranoid tests."""
 import pytest
 
-from rag_toolkit.core.contracts import Document, Page, Source
+from rag_blocks.core.contracts import Document, Page, Source
 
 
 def test_from_path_fails_fast_on_missing_file(tmp_path):

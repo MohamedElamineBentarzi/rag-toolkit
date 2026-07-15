@@ -11,7 +11,7 @@ the ``minio`` *client* SDK is Apache-2.0; only the MinIO *server* is AGPL, which
 does not reach users of this library.)
 
 Dependency handling: ``minio`` is imported lazily inside ``_get_client`` and
-declared as the optional extra ``rag-toolkit[minio]`` — importing rag_toolkit
+declared as the optional extra ``rag-blocks[minio]`` — importing rag_blocks
 never requires it ("batteries optional").
 
 Credentials follow the toolkit policy (AGENTS.md §7.4): explicit config wins,
@@ -49,7 +49,7 @@ class MinioBlobStore(BlobStore):
     class Config:
         #: Host[:port] of the S3 service, no scheme (``secure`` controls TLS).
         endpoint: str = "localhost:9000"
-        bucket: str = "rag-toolkit"
+        bucket: str = "rag-blocks"
         access_key: Optional[str] = None   # falls back to MINIO_ACCESS_KEY
         secret_key: Optional[str] = None   # falls back to MINIO_SECRET_KEY
         secure: bool = False               # True ⇒ HTTPS
@@ -143,7 +143,7 @@ class MinioBlobStore(BlobStore):
             except ImportError as exc:
                 raise StorageError(
                     "MinioBlobStore requires the 'minio' package. "
-                    "Install with: pip install 'rag-toolkit[minio]'"
+                    "Install with: pip install 'rag-blocks[minio]'"
                 ) from exc
             access, secret = self._credentials()
             client = Minio(

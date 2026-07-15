@@ -5,8 +5,8 @@ place: credential resolution, secret redaction, lazy client construction, and
 registry wiring. The full put/get/exists round-trip against a real backend is
 the env-gated integration test.
 """
-from rag_toolkit.core.registry import registry
-from rag_toolkit.storage.minio_store import MinioBlobStore
+from rag_blocks.core.registry import registry
+from rag_blocks.storage.minio_store import MinioBlobStore
 
 
 def test_construction_is_lazy_no_client_built(monkeypatch):
@@ -38,7 +38,7 @@ def test_credentials_are_redacted_in_describe():
     assert cfg["secret_key"] == "<redacted>"
     # Non-secret config still travels for reproducibility.
     assert cfg["endpoint"] == "localhost:9000"
-    assert cfg["bucket"] == "rag-toolkit"
+    assert cfg["bucket"] == "rag-blocks"
 
 
 def test_key_rotation_does_not_change_fingerprint():

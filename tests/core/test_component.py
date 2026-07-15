@@ -4,9 +4,9 @@ from typing import Optional
 
 import pytest
 
-from rag_toolkit.core.component import Component
-from rag_toolkit.core.errors import ConfigError
-from rag_toolkit.ingestion.parsers.base import Parser
+from rag_blocks.core.component import Component
+from rag_blocks.core.errors import ConfigError
+from rag_blocks.ingestion.parsers.base import Parser
 
 
 class Toy(Component):
@@ -52,7 +52,7 @@ def test_secrets_are_redacted_and_do_not_affect_identity():
 
 
 def test_enums_serialize_as_plain_values():
-    from rag_toolkit.ingestion.parsers.docling_parser import DoclingParser
+    from rag_blocks.ingestion.parsers.docling_parser import DoclingParser
 
     assert DoclingParser().describe()["config"]["ocr_policy"] == "auto"
 

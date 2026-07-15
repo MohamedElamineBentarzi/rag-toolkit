@@ -1,13 +1,13 @@
 """HybridRetriever: sugar that fuses a ChunkIndex's representations."""
 import pytest
 
-from rag_toolkit.core.contracts import Chunk, Query
-from rag_toolkit.core.errors import ConfigError
-from rag_toolkit.embedding.hashing import HashingEmbedder
-from rag_toolkit.indexing.chunk_index import ChunkIndex
-from rag_toolkit.retrieval.hybrid import HybridRetriever
-from rag_toolkit.storage.bm25_index import BM25Index
-from rag_toolkit.storage.memory_store import MemoryVectorStore
+from rag_blocks.core.contracts import Chunk, Query
+from rag_blocks.core.errors import ConfigError
+from rag_blocks.embedding.hashing import HashingEmbedder
+from rag_blocks.indexing.chunk_index import ChunkIndex
+from rag_blocks.retrieval.hybrid import HybridRetriever
+from rag_blocks.storage.bm25_index import BM25Index
+from rag_blocks.storage.memory_store import MemoryVectorStore
 from tests.contract_checks import assert_retriever_contract
 
 

@@ -1,7 +1,7 @@
 """CachingEmbedder: fingerprint-transparent memoization with namespace split."""
-from rag_toolkit.embedding.caching import CachingEmbedder
-from rag_toolkit.embedding.hashing import HashingEmbedder
-from rag_toolkit.storage.local import LocalBlobStore
+from rag_blocks.embedding.caching import CachingEmbedder
+from rag_blocks.embedding.hashing import HashingEmbedder
+from rag_blocks.storage.local import LocalBlobStore
 from tests.contract_checks import assert_embedder_contract
 
 

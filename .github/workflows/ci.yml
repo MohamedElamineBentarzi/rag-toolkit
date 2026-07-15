@@ -19,6 +19,6 @@ jobs:
       - name: Install (dev)
         run: pip install -e ".[dev]"
       - name: Lint
-        run: ruff check rag_toolkit tests
+        run: ruff check rag_blocks tests
       - name: Test with coverage
-        run: pytest --cov=rag_toolkit --cov-report=term-missing
+        run: pytest --cov=rag_blocks --cov-report=term-missing

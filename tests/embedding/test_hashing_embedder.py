@@ -1,8 +1,8 @@
 """HashingEmbedder: zero-dep, deterministic feature-hashing embedder."""
 import math
 
-from rag_toolkit.core.registry import registry
-from rag_toolkit.embedding.hashing import HashingEmbedder
+from rag_blocks.core.registry import registry
+from rag_blocks.embedding.hashing import HashingEmbedder
 from tests.contract_checks import assert_embedder_contract
 
 

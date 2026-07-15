@@ -1,8 +1,8 @@
 """BM25Index: pure-Python Okapi BM25 lexical index, hermetic."""
-from rag_toolkit.core.contracts import Chunk
-from rag_toolkit.core.registry import registry
-from rag_toolkit.storage.bm25_index import BM25Index
-from rag_toolkit.storage.local import LocalBlobStore
+from rag_blocks.core.contracts import Chunk
+from rag_blocks.core.registry import registry
+from rag_blocks.storage.bm25_index import BM25Index
+from rag_blocks.storage.local import LocalBlobStore
 from tests.contract_checks import assert_lexical_index_contract
 
 

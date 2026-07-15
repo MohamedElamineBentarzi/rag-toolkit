@@ -5,7 +5,7 @@ Injects a fake client so the `complete` adapter logic is exercised without the
 integration test)."""
 from types import SimpleNamespace
 
-from rag_toolkit.generation.anthropic_generator import AnthropicGenerator
+from rag_blocks.generation.anthropic_generator import AnthropicGenerator
 
 
 class _FakeMessages:

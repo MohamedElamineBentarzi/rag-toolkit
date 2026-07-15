@@ -65,7 +65,7 @@ class CrossEncoderReranker(Refiner):
             except ImportError as exc:
                 raise RagToolkitError(
                     "CrossEncoderReranker requires 'sentence-transformers'. "
-                    "Install with: pip install 'rag-toolkit[sentence-transformers]'"
+                    "Install with: pip install 'rag-blocks[sentence-transformers]'"
                 ) from exc
             self._model = CrossEncoder(self.config.model, device=self.config.device)
         return self._model

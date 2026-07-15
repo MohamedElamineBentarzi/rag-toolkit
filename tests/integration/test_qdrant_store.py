@@ -3,7 +3,7 @@
 Uses qdrant-client's in-process `:memory:` mode by default, so it needs only
 the dependency (no server):
 
-    pip install 'rag-toolkit[qdrant]'
+    pip install 'rag-blocks[qdrant]'
     pytest -m integration tests/integration/test_qdrant_store.py
 
 Point at a real server with QDRANT_URL to exercise the network path.
@@ -12,9 +12,9 @@ import os
 
 import pytest
 
-from rag_toolkit.core.contracts import VectorSpec
-from rag_toolkit.core.errors import ConfigError
-from rag_toolkit.storage.qdrant_store import QdrantVectorStore
+from rag_blocks.core.contracts import VectorSpec
+from rag_blocks.core.errors import ConfigError
+from rag_blocks.storage.qdrant_store import QdrantVectorStore
 from tests.contract_checks import assert_vector_store_contract
 
 pytestmark = pytest.mark.integration
@@ -24,7 +24,7 @@ pytestmark = pytest.mark.integration
 def store():
     pytest.importorskip("qdrant_client")
     url = os.environ.get("QDRANT_URL")
-    collection = "rag_toolkit_contract"
+    collection = "rag_blocks_contract"
     if url:
         return QdrantVectorStore(url=url, collection=collection)
     return QdrantVectorStore(location=":memory:", collection=collection)
@@ -46,7 +46,7 @@ def test_existing_collection_with_mismatched_schema_raises_clearly():
     pytest.importorskip("qdrant_client")
     from qdrant_client import QdrantClient, models
     client = QdrantClient(location=":memory:")
-    coll = "rag_toolkit_mismatch"
+    coll = "rag_blocks_mismatch"
 
     _attached(coll, client, models).ensure_schema(
         [VectorSpec("dense", "dense", dimensions=8)]
@@ -63,7 +63,7 @@ def test_recreate_on_mismatch_drops_and_rebuilds():
     pytest.importorskip("qdrant_client")
     from qdrant_client import QdrantClient, models
     client = QdrantClient(location=":memory:")
-    coll = "rag_toolkit_recreate"
+    coll = "rag_blocks_recreate"
 
     _attached(coll, client, models).ensure_schema(
         [VectorSpec("dense", "dense", dimensions=8)]

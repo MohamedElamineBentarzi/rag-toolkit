@@ -1,11 +1,11 @@
 """DocumentCatalog: doc_id → source provenance + download link (hermetic)."""
 import pytest
 
-from rag_toolkit.core.contracts import Source
-from rag_toolkit.core.errors import ConfigError, StorageError
-from rag_toolkit.indexing.catalog import manifest_key, raw_key
-from rag_toolkit.pipeline import RagPipeline
-from rag_toolkit.storage.local import LocalBlobStore
+from rag_blocks.core.contracts import Source
+from rag_blocks.core.errors import ConfigError, StorageError
+from rag_blocks.indexing.catalog import manifest_key, raw_key
+from rag_blocks.pipeline import RagPipeline
+from rag_blocks.storage.local import LocalBlobStore
 
 _CORPUS = b"# France\nParis is the capital of France.\n\n# Fruit\nBananas are yellow.\n"
 
@@ -70,8 +70,8 @@ def test_manifest_and_raw_keys_are_stable():
 
 
 def test_reingesting_the_same_doc_does_not_rewrite_the_manifest(tmp_path):
-    from rag_toolkit.core.contracts import Document, PageSpan
-    from rag_toolkit.indexing.catalog import DocumentCatalog
+    from rag_blocks.core.contracts import Document, PageSpan
+    from rag_blocks.indexing.catalog import DocumentCatalog
 
     catalog = DocumentCatalog(LocalBlobStore(root=str(tmp_path)))
     doc = Document(id="abc123", markdown="hi", pages=[PageSpan(1, 0, 2)],

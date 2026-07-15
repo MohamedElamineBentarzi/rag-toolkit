@@ -1,11 +1,11 @@
 """IndexingPipeline: thin wiring, tracing hook, and opt-in truth store."""
 import json
 
-from rag_toolkit.chunking.fixed import FixedChunker
-from rag_toolkit.core.contracts import Source
-from rag_toolkit.ingestion.parsers.plaintext import PlainTextParser
-from rag_toolkit.pipeline import IndexingPipeline, TraceEvent
-from rag_toolkit.storage.local import LocalBlobStore
+from rag_blocks.chunking.fixed import FixedChunker
+from rag_blocks.core.contracts import Source
+from rag_blocks.ingestion.parsers.plaintext import PlainTextParser
+from rag_blocks.pipeline import IndexingPipeline, TraceEvent
+from rag_blocks.storage.local import LocalBlobStore
 
 
 def text_source(body="hello world\n\nsecond paragraph\n", name="doc.txt"):

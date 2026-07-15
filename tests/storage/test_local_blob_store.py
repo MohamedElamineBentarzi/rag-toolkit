@@ -1,9 +1,9 @@
 """LocalBlobStore: on-disk truth store, fully hermetic."""
 import pytest
 
-from rag_toolkit.core.errors import StorageError
-from rag_toolkit.core.registry import registry
-from rag_toolkit.storage.local import LocalBlobStore
+from rag_blocks.core.errors import StorageError
+from rag_blocks.core.registry import registry
+from rag_blocks.storage.local import LocalBlobStore
 from tests.contract_checks import assert_blob_store_contract
 
 

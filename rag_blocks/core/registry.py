@@ -12,7 +12,7 @@ Why this matters (Open/Closed Principle in practice):
       complete, serializable spec. That's exactly what the auto-tuner needs —
       it enumerates configs, not code.
     - Third-party packages can ship components via Python entry points
-      (`rag_toolkit.components` group) and they appear here automatically —
+      (`rag_blocks.components` group) and they appear here automatically —
       a plugin ecosystem with no plugin framework.
 """
 
@@ -26,7 +26,7 @@ from .errors import ComponentNotFoundError, DuplicateComponentError
 
 __all__ = ["Registry", "registry"]
 
-ENTRY_POINT_GROUP = "rag_toolkit.components"
+ENTRY_POINT_GROUP = "rag_blocks.components"
 
 #: Preserves the decorated class's exact type through @register, so type
 #: checkers see `HashingEmbedder`, not `Component` — otherwise every registered
@@ -103,7 +103,7 @@ class Registry:
 
         A plugin package only needs, in its pyproject.toml:
 
-            [project.entry-points."rag_toolkit.components"]
+            [project.entry-points."rag_blocks.components"]
             my_ocr = "my_pkg.ocr"          # importing the module registers it
 
         Lazy + fault-tolerant: a broken plugin must never take down the core.

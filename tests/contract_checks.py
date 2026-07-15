@@ -11,8 +11,8 @@ import uuid
 
 import pytest
 
-from rag_toolkit.chunking.base import Chunker
-from rag_toolkit.core.contracts import (
+from rag_blocks.chunking.base import Chunker
+from rag_blocks.core.contracts import (
     Answer,
     Chunk,
     Document,
@@ -21,16 +21,16 @@ from rag_toolkit.core.contracts import (
     Source,
     VectorSpec,
 )
-from rag_toolkit.core.errors import RagToolkitError, StorageError
-from rag_toolkit.embedding.base import Embedder
-from rag_toolkit.enrichment.base import Enricher
-from rag_toolkit.generation.base import Generator
-from rag_toolkit.ingestion.parsers.base import Parser
-from rag_toolkit.refinement.base import Refiner
-from rag_toolkit.retrieval.base import Retriever
-from rag_toolkit.storage.base import BlobStore
-from rag_toolkit.storage.lexical_index import LexicalIndex
-from rag_toolkit.storage.vector_store import VectorStore
+from rag_blocks.core.errors import RagToolkitError, StorageError
+from rag_blocks.embedding.base import Embedder
+from rag_blocks.enrichment.base import Enricher
+from rag_blocks.generation.base import Generator
+from rag_blocks.ingestion.parsers.base import Parser
+from rag_blocks.refinement.base import Refiner
+from rag_blocks.retrieval.base import Retriever
+from rag_blocks.storage.base import BlobStore
+from rag_blocks.storage.lexical_index import LexicalIndex
+from rag_blocks.storage.vector_store import VectorStore
 
 
 def assert_parser_contract(parser: Parser, source: Source) -> None:
@@ -64,7 +64,7 @@ def assert_blob_store_contract(store: BlobStore) -> None:
     real, shared backend (the contract has no delete, by design)."""
     key = f"contract-checks/{uuid.uuid4().hex}/original.bin"
     # Binary-safe payloads: full byte range incl. NUL, plus nested-path key.
-    payload = bytes(range(256)) + b"\n rag-toolkit blob \x00 body"
+    payload = bytes(range(256)) + b"\n rag-blocks blob \x00 body"
     payload2 = b"overwritten \xff\x00 value"
 
     # 1. Absent key: exists() is a quiet False; get() raises with the key.

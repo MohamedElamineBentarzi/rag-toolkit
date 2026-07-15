@@ -1,6 +1,6 @@
 # requirements-gpu.txt — install the CUDA (GPU) build of PyTorch.
 #
-# rag-toolkit's core is pure Python; only its local-model components touch a GPU,
+# rag-blocks's core is pure Python; only its local-model components touch a GPU,
 # and they do so automatically once a CUDA torch is installed:
 #   - SentenceTransformerEmbedder   (embeddings)
 #   - BgeReranker                   (cross-encoder rerank)

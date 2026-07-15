@@ -30,7 +30,7 @@ the integration test), `path=...` (embedded on-disk), or `url=...` (a real
 server). Credentials (`api_key`) are named for auto-redaction.
 
 Dependency handling: `qdrant_client` is imported lazily and declared as the
-optional extra `rag-toolkit[qdrant]`; the client is created once and reused.
+optional extra `rag-blocks[qdrant]`; the client is created once and reused.
 Written against qdrant-client's `query_points`/`scroll` API (the `search`
 method is deprecated) — re-verify on a dependency bump.
 
@@ -68,7 +68,7 @@ class QdrantVectorStore(VectorStore):
 
     @dataclass
     class Config:
-        collection: str = "rag_toolkit"
+        collection: str = "rag_blocks"
         url: Optional[str] = None          # e.g. "http://localhost:6333"
         location: Optional[str] = None     # e.g. ":memory:"
         path: Optional[str] = None         # embedded on-disk store
@@ -312,7 +312,7 @@ class QdrantVectorStore(VectorStore):
             except ImportError as exc:
                 raise StorageError(
                     "QdrantVectorStore requires 'qdrant-client'. "
-                    "Install with: pip install 'rag-toolkit[qdrant]'"
+                    "Install with: pip install 'rag-blocks[qdrant]'"
                 ) from exc
             self._client = QdrantClient(
                 location=self.config.location,

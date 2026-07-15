@@ -12,7 +12,7 @@ back to a source chunk's pages. Note: Opus 4.8 rejects `temperature`/`top_p`, so
 this adapter deliberately sends no sampling parameters.
 
 Dependency handling: `anthropic` is imported lazily and declared as the optional
-extra `rag-toolkit[anthropic]`; the client is built once and reused. Credentials
+extra `rag-blocks[anthropic]`; the client is built once and reused. Credentials
 follow the toolkit policy — explicit `api_key`, else the SDK's own resolution
 (the `ANTHROPIC_API_KEY` env var or an `ant` profile), so we never force a key.
 
@@ -110,7 +110,7 @@ class AnthropicGenerator(Generator):
             except ImportError as exc:
                 raise GenerationError(
                     "AnthropicGenerator requires the 'anthropic' package. "
-                    "Install with: pip install 'rag-toolkit[anthropic]'"
+                    "Install with: pip install 'rag-blocks[anthropic]'"
                 ) from exc
             api_key = self.config.api_key or os.environ.get("ANTHROPIC_API_KEY")
             # api_key may be None — the SDK then resolves from env / ant profile;

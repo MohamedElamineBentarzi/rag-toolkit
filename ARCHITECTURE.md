@@ -1,4 +1,4 @@
-# rag-toolkit — Architecture
+# rag-blocks — Architecture
 
 This document is the blueprint of the whole library: the pipeline map, the
 data contracts, every stage interface (including the ones not yet coded), the
@@ -81,7 +81,7 @@ intelligence lives in components; all wiring lives in config.
 
 ---
 
-## 2. Data contracts (`rag_toolkit.core.contracts`)
+## 2. Data contracts (`rag_blocks.core.contracts`)
 
 | Artifact      | Produced by | Consumed by          | Key fields                                            |
 |---------------|-------------|----------------------|-------------------------------------------------------|
@@ -464,7 +464,7 @@ example). Contract tests to satisfy:
 4. Vendor imports happen lazily inside methods.
 5. Bump `version` on behavioral change (cache invalidation).
 
-Third-party packages publish components via the `rag_toolkit.components`
+Third-party packages publish components via the `rag_blocks.components`
 entry-point group; they appear in the registry automatically.
 
 ---
@@ -472,7 +472,7 @@ entry-point group; they appear in the registry automatically.
 ## 9. Repository layout & roadmap
 
 ```
-rag_toolkit/
+rag_blocks/
   core/          contracts (+ SparseVector/VectorSpec), component, registry [v0.1 ✓]
   ingestion/     detection, parsers/, ocr/                     [v0.1 ✓]
   chunking/      fixed, markdown-aware ✓; chonkie adapter      [v0.2]

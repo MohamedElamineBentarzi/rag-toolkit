@@ -85,7 +85,7 @@ class ContextualEnricher(Enricher):
             except ImportError as exc:
                 raise EnrichmentError(
                     "ContextualEnricher requires the 'anthropic' package. "
-                    "Install with: pip install 'rag-toolkit[anthropic]'"
+                    "Install with: pip install 'rag-blocks[anthropic]'"
                 ) from exc
             api_key = self.config.api_key or os.environ.get("ANTHROPIC_API_KEY")
             self._client = Anthropic(api_key=api_key) if api_key else Anthropic()

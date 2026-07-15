@@ -1,4 +1,4 @@
-"""Exception hierarchy for rag-toolkit.
+"""Exception hierarchy for rag-blocks.
 
 Design note: one root exception (`RagToolkitError`) so callers can do a
 single broad `except RagToolkitError` at pipeline boundaries, plus narrow
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 
 class RagToolkitError(Exception):
-    """Root of all rag-toolkit exceptions."""
+    """Root of all rag-blocks exceptions."""
 
 
 class ComponentNotFoundError(RagToolkitError):

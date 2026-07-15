@@ -1,6 +1,6 @@
 """ContextualEnricher against the real Claude API. Opt-in.
 
-    pip install 'rag-toolkit[anthropic]'
+    pip install 'rag-blocks[anthropic]'
     ANTHROPIC_API_KEY=... pytest -m integration \
         tests/integration/test_contextual_enricher.py
 """
@@ -8,10 +8,10 @@ import os
 
 import pytest
 
-from rag_toolkit.core.contracts import Source
-from rag_toolkit.chunking.markdown import MarkdownChunker
-from rag_toolkit.enrichment.contextual import ContextualEnricher
-from rag_toolkit.ingestion.parsers.plaintext import PlainTextParser
+from rag_blocks.core.contracts import Source
+from rag_blocks.chunking.markdown import MarkdownChunker
+from rag_blocks.enrichment.contextual import ContextualEnricher
+from rag_blocks.ingestion.parsers.plaintext import PlainTextParser
 from tests.contract_checks import assert_enricher_contract
 
 pytestmark = pytest.mark.integration

@@ -1,11 +1,11 @@
 """AutoParser: routing is data — and the swappability thesis gets a test."""
 import pytest
 
-from rag_toolkit.core.contracts import Page, Source, SourceFormat
-from rag_toolkit.core.errors import UnsupportedFormatError
-from rag_toolkit.core.registry import registry
-from rag_toolkit.ingestion.parsers.auto import AutoParser
-from rag_toolkit.ingestion.parsers.base import Parser
+from rag_blocks.core.contracts import Page, Source, SourceFormat
+from rag_blocks.core.errors import UnsupportedFormatError
+from rag_blocks.core.registry import registry
+from rag_blocks.ingestion.parsers.auto import AutoParser
+from rag_blocks.ingestion.parsers.base import Parser
 from tests.contract_checks import assert_parser_contract
 
 

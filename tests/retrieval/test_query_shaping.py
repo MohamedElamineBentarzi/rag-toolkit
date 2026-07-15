@@ -1,13 +1,13 @@
 """MultiQueryRetriever / HydeRetriever: query shaping as composition (fake LLM)."""
 import pytest
 
-from rag_toolkit.core.contracts import Chunk, Query
-from rag_toolkit.core.errors import ConfigError
-from rag_toolkit.embedding.hashing import HashingEmbedder
-from rag_toolkit.indexing.chunk_index import ChunkIndex
-from rag_toolkit.retrieval.index_retriever import IndexRetriever
-from rag_toolkit.retrieval.query_shaping import HydeRetriever, MultiQueryRetriever
-from rag_toolkit.storage.memory_store import MemoryVectorStore
+from rag_blocks.core.contracts import Chunk, Query
+from rag_blocks.core.errors import ConfigError
+from rag_blocks.embedding.hashing import HashingEmbedder
+from rag_blocks.indexing.chunk_index import ChunkIndex
+from rag_blocks.retrieval.index_retriever import IndexRetriever
+from rag_blocks.retrieval.query_shaping import HydeRetriever, MultiQueryRetriever
+from rag_blocks.storage.memory_store import MemoryVectorStore
 
 
 def chunk(i, text):

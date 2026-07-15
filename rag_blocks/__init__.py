@@ -1,4 +1,4 @@
-"""rag-toolkit: composable building blocks for production RAG pipelines.
+"""rag-blocks: composable building blocks for production RAG pipelines.
 
 Design in one paragraph: stages are swappable Strategies registered under a
 (kind, name) key; they communicate only through typed data contracts
@@ -8,7 +8,7 @@ fingerprint that later powers the auto-tuning suite's cross-pipeline caching.
 
 Quick start:
 
-    import rag_toolkit as rk
+    import rag_blocks as rk
 
     doc = rk.ingest("report.pdf")                       # sane defaults
     doc = rk.ingest("scan.pdf", ocr_engine="mistral",   # cloud OCR

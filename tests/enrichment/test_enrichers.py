@@ -1,9 +1,9 @@
 """HeadingEnricher (fully hermetic). The empty chain is the null enricher."""
-from rag_toolkit.chunking.fixed import FixedChunker
-from rag_toolkit.core.contracts import Source
-from rag_toolkit.core.registry import registry
-from rag_toolkit.enrichment.heading import HeadingEnricher
-from rag_toolkit.ingestion.parsers.plaintext import PlainTextParser
+from rag_blocks.chunking.fixed import FixedChunker
+from rag_blocks.core.contracts import Source
+from rag_blocks.core.registry import registry
+from rag_blocks.enrichment.heading import HeadingEnricher
+from rag_blocks.ingestion.parsers.plaintext import PlainTextParser
 from tests.contract_checks import assert_enricher_contract
 
 # Long sections so a small fixed chunker cuts *within* a section — those chunks

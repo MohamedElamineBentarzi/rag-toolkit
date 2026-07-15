@@ -5,7 +5,7 @@ Mistral returns markdown, Google returns text + layout entities, yet both
 collapse into the same `OcrResult` and the parser never knows the difference
 (Liskov substitution in action).
 
-Optional extra: `rag-toolkit[google]`.
+Optional extra: `rag-blocks[google]`.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ class GoogleDocAiOcrEngine(OcrEngine):
             except ImportError as exc:
                 raise OcrError(
                     "GoogleDocAiOcrEngine requires 'google-cloud-documentai'. "
-                    "Install with: pip install 'rag-toolkit[google]'"
+                    "Install with: pip install 'rag-blocks[google]'"
                 ) from exc
             self._documentai = documentai
             self._client = documentai.DocumentProcessorServiceClient()

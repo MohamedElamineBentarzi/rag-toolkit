@@ -1,23 +1,23 @@
 """CrossEncoderReranker against a real cross-encoder. Opt-in.
 
-    pip install 'rag-toolkit[sentence-transformers]'
+    pip install 'rag-blocks[sentence-transformers]'
     pytest -m integration tests/integration/test_cross_encoder_refiner.py
 
 A small cross-encoder is used by default (fast); override with
-RAG_TOOLKIT_TEST_RERANKER_MODEL.
+rag_blocks_TEST_RERANKER_MODEL.
 """
 import os
 
 import pytest
 
-from rag_toolkit.core.contracts import Chunk, Query, ScoredChunk
-from rag_toolkit.refinement.cross_encoder import CrossEncoderReranker
+from rag_blocks.core.contracts import Chunk, Query, ScoredChunk
+from rag_blocks.refinement.cross_encoder import CrossEncoderReranker
 from tests.contract_checks import assert_refiner_contract
 
 pytestmark = pytest.mark.integration
 
 _MODEL = os.environ.get(
-    "RAG_TOOLKIT_TEST_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    "rag_blocks_TEST_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
 )
 
 

@@ -3,8 +3,8 @@
 The default `pytest` run excludes these (see addopts in pyproject.toml) so
 the suite stays fast and hermetic. Run them with:
 
-    pip install "rag-toolkit[docling]"
-    RAG_TOOLKIT_TEST_PDF=/path/to/any.pdf pytest -m integration
+    pip install "rag-blocks[docling]"
+    rag_blocks_TEST_PDF=/path/to/any.pdf pytest -m integration
 """
 import os
 
@@ -15,11 +15,11 @@ pytestmark = pytest.mark.integration
 
 def test_docling_pdf_roundtrip():
     pytest.importorskip("docling")
-    pdf_path = os.environ.get("RAG_TOOLKIT_TEST_PDF")
+    pdf_path = os.environ.get("rag_blocks_TEST_PDF")
     if not pdf_path:
-        pytest.skip("set RAG_TOOLKIT_TEST_PDF to a local PDF to run this test")
+        pytest.skip("set rag_blocks_TEST_PDF to a local PDF to run this test")
 
-    import rag_toolkit as rk
+    import rag_blocks as rk
 
     doc = rk.ingest(pdf_path)
     assert doc.markdown.strip()

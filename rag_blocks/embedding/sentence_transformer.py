@@ -12,7 +12,7 @@ it for models that do (bge-v1.5, e5: "query: ")  — a one-line config change, n
 new code.
 
 Dependency handling: `sentence_transformers` is imported lazily and declared as
-the optional extra `rag-toolkit[sentence-transformers]`. The model (heavy: it
+the optional extra `rag-blocks[sentence-transformers]`. The model (heavy: it
 loads weights onto CPU/GPU) is built once and cached on the instance, reused
 across every batch — never per call.
 
@@ -86,7 +86,7 @@ class SentenceTransformerEmbedder(Embedder):
             except ImportError as exc:
                 raise EmbeddingError(
                     "SentenceTransformerEmbedder requires 'sentence-transformers'. "
-                    "Install with: pip install 'rag-toolkit[sentence-transformers]'"
+                    "Install with: pip install 'rag-blocks[sentence-transformers]'"
                 ) from exc
             try:
                 self._model = SentenceTransformer(

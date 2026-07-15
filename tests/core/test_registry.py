@@ -4,9 +4,9 @@ from dataclasses import dataclass
 
 import pytest
 
-from rag_toolkit.core.component import Component
-from rag_toolkit.core.errors import ComponentNotFoundError, DuplicateComponentError
-from rag_toolkit.core.registry import Registry
+from rag_blocks.core.component import Component
+from rag_blocks.core.errors import ComponentNotFoundError, DuplicateComponentError
+from rag_blocks.core.registry import Registry
 
 
 def make_component(kind_: str, name_: str):

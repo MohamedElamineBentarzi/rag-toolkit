@@ -2,7 +2,7 @@
 
 Everything below runs on the stdlib alone (no docling / mistralai needed):
 format detection, registry, streaming plaintext parsing, provenance, and
-component fingerprints. PDF/OCR paths need `pip install "rag-toolkit[docling]"`.
+component fingerprints. PDF/OCR paths need `pip install "rag-blocks[docling]"`.
 
 Run from the repo root:  python examples/quickstart.py
 """
@@ -15,11 +15,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import rag_toolkit as rk
+import rag_blocks as rk
 
 
 def main() -> None:
-    tmp = Path(tempfile.mkdtemp(prefix="rag_toolkit_demo_"))
+    tmp = Path(tempfile.mkdtemp(prefix="rag_blocks_demo_"))
     sample = tmp / "notes.md"
     sample.write_text(
         "# Retrieval notes\n\n"

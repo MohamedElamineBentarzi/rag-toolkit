@@ -1,4 +1,4 @@
-# AGENTS.md — rag-toolkit agent context
+# AGENTS.md — rag-blocks agent context
 
 **Read this file completely before writing or modifying any code.** It is the
 canonical knowledge transfer from the project's design phase. It contains the
@@ -9,8 +9,8 @@ habits, this file wins. When code conflicts with this file, flag it — do not
 silently "fix" either side.
 
 Recommended reading order before your first change:
-`AGENTS.md` (this file) → `ARCHITECTURE.md` → `rag_toolkit/core/contracts.py`
-→ `rag_toolkit/core/component.py` → `rag_toolkit/ingestion/parsers/base.py`
+`AGENTS.md` (this file) → `ARCHITECTURE.md` → `rag_blocks/core/contracts.py`
+→ `rag_blocks/core/component.py` → `rag_blocks/ingestion/parsers/base.py`
 → one concrete parser (`plaintext.py`, then `docling_parser.py`) →
 `tests/contract_checks.py`. Module docstrings are load-bearing documentation,
 not decoration — they explain *why*, and you are expected to write in the
@@ -20,7 +20,7 @@ same style.
 
 ## 1. What this project is
 
-`rag-toolkit` is an open-source Python library of **composable building blocks
+`rag-blocks` is an open-source Python library of **composable building blocks
 for production RAG pipelines**: every stage (parsing, chunking, embedding,
 storage, retrieval, reranking, generation, evaluation) is a swappable
 component behind a stable contract, every pipeline is a serializable config,
@@ -79,7 +79,7 @@ these eight principles. They are not aspirational.
 6. **Provenance from day one.** Every artifact must answer "where did this
    come from". Never drop offsets, page numbers, or source references —
    they cannot be reconstructed later.
-7. **Batteries optional.** `rag_toolkit.core` has ZERO third-party
+7. **Batteries optional.** `rag_blocks.core` has ZERO third-party
    dependencies (stdlib dataclasses, not pydantic — deliberate). Every vendor
    SDK is a pip extra, imported lazily *inside the method that uses it*,
    with an actionable ImportError message naming the extra.
@@ -135,7 +135,7 @@ Registry mechanics (`core/registry.py`): `@registry.register` class decorator
 reads `kind`/`name` from the class (single source of truth, decorator takes no
 args). Re-registering the *same* class is idempotent; a *different* class
 under an existing key raises. Third-party plugins load lazily via the
-`rag_toolkit.components` entry-point group; a broken plugin must never crash
+`rag_blocks.components` entry-point group; a broken plugin must never crash
 core (exceptions are swallowed per entry point). `registry.create(kind, name,
 **overrides)` is the Factory Method everything uses.
 
@@ -395,7 +395,7 @@ deliverable.
   credential mechanics belong inside the vendor's Adapter.
 - Repo hygiene: `.env` gitignored; committed `.env.example` with placeholder
   keys (`MISTRAL_API_KEY=`, `GOOGLE_APPLICATION_CREDENTIALS=`,
-  `RAG_TOOLKIT_TEST_PDF=`); CI secrets via GitHub Actions secrets. Fork PRs
+  `rag_blocks_TEST_PDF=`); CI secrets via GitHub Actions secrets. Fork PRs
   don't receive secrets — which is fine BY DESIGN because the default test
   suite is hermetic; only `-m integration` needs keys (run on main/nightly).
 
@@ -403,7 +403,7 @@ deliverable.
 
 Apache-2.0 (decided; already in pyproject). Before first publish: add
 verbatim `LICENSE` text (never edited), optional one-line `NOTICE`
-(`rag-toolkit — Copyright 2026 Mohamed Elamine Bentarzi`), prefer PEP 639
+(`rag-blocks — Copyright 2026 Mohamed Elamine Bentarzi`), prefer PEP 639
 form `license = "Apache-2.0"` + `license-files = ["LICENSE"]` in pyproject.
 Rationale: explicit patent grant, contribution licensing (§5), ecosystem norm
 for RAG infra. Decided while sole-author — do not merge external PRs before
@@ -458,7 +458,7 @@ a kind.
   edges is fine for users, not for us).
 - Lazy vendor imports, exact idiom: import inside the method that needs it,
   wrap `ImportError`, raise a toolkit error naming the extra:
-  `"... requires 'docling'. Install with: pip install 'rag-toolkit[docling]'"`.
+  `"... requires 'docling'. Install with: pip install 'rag-blocks[docling]'"`.
 - Errors: single root `RagToolkitError`; raise narrow subclasses with context
   (`ParseError(msg, source_uri=..., page_number=...)`) — "PDF failed" is
   useless in a 10k-document batch. Fail fast at construction (unknown engine
@@ -472,7 +472,7 @@ a kind.
   policies are str-Enums, test doubles prefixed `Fake`. `kind` is the stage
   slot, `name` the implementation.
 - Built-ins register via module import side effect; wire new modules into the
-  subsystem `__init__.py` and export in `__all__` (top-level `rag_toolkit/
+  subsystem `__init__.py` and export in `__all__` (top-level `rag_blocks/
   __init__.py` for user-facing names).
 - Bump the component `version` on ANY behavioral change (cache invalidation).
 - Public API discipline: pre-1.0, adding is cheap, removing is a breaking
@@ -486,7 +486,7 @@ a kind.
   is **fast and hermetic** — zero vendor deps, zero network, zero keys
   (`addopts = "-m 'not integration'"`). Real-stack tests live in
   `tests/integration/`, marked `integration`, opt-in
-  (`RAG_TOOLKIT_TEST_PDF=... pytest -m integration`).
+  (`rag_blocks_TEST_PDF=... pytest -m integration`).
 - **Tests ship WITH the feature, same PR.** A component without tests does
   not exist.
 - Test OUR logic, not vendors': extract pure functions (`_plan_segments`,

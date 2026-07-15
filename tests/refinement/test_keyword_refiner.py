@@ -1,7 +1,7 @@
 """KeywordRefiner: hermetic lexical reranking refiner."""
-from rag_toolkit.core.contracts import Chunk, Query, ScoredChunk
-from rag_toolkit.core.registry import registry
-from rag_toolkit.refinement.keyword import KeywordRefiner
+from rag_blocks.core.contracts import Chunk, Query, ScoredChunk
+from rag_blocks.core.registry import registry
+from rag_blocks.refinement.keyword import KeywordRefiner
 from tests.contract_checks import assert_refiner_contract
 
 

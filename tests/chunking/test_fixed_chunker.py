@@ -1,7 +1,7 @@
 """FixedChunker: fixed-size windows with overlap and boundary-aware cuts."""
-from rag_toolkit.chunking.fixed import FixedChunker
-from rag_toolkit.core.contracts import Document, Page, Source
-from rag_toolkit.ingestion.parsers.plaintext import PlainTextParser
+from rag_blocks.chunking.fixed import FixedChunker
+from rag_blocks.core.contracts import Document, Page, Source
+from rag_blocks.ingestion.parsers.plaintext import PlainTextParser
 from tests.contract_checks import assert_chunker_contract
 
 
