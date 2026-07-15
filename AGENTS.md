@@ -215,8 +215,8 @@ provenance through it and through nothing else.
 | Facade | `rk.ingest()`, `AutoParser`, future `RagPipeline` | one obvious call for the 90% case |
 | Template Method | `Parser.parse()` over `iter_pages()`; committed for `Chunker.chunk()` over `iter_spans()` | bookkeeping written once, correctly; strategies implement ONE primitive |
 | Iterator / generator pipeline | `iter_pages`, `recognize_batch`, future `iter_spans` | O(batch) memory, backpressure free |
-| Composite | `AutoParser`; future `HybridRetriever` | components made of components, uniform to callers |
-| Null Object | future `NoOpReranker`, `NoOpEnricher` | optional stages without `if x is not None` litter; also the honest tuner baseline |
+| Composite | `AutoParser`, `HybridRetriever`, `FusionRetriever` | components made of components, uniform to callers |
+| Null Object (as empty chain) | empty `refine=[]` / `enrich=[]` | optional stages without `if x is not None` litter; the empty chain *is* the null object (no `NoOp*` classes — DR-0001 v2) |
 | Immutable value objects | `Source`, `PageSpan`, `PageImage` | safe across caches/threads |
 | Lazy initialization | vendor imports, docling converter cache, OCR clients | zero-dep core; heavy models built once, reused |
 
@@ -371,8 +371,8 @@ stages 1..N)` — shared pipeline prefixes across trials are computed once
 trial_id, full `describe()` per stage (secrets already redacted by design),
 fingerprints, metrics, cost (latency_ms, tokens, api_usd), cache_hits,
 timestamps → JSONL + SQLite. Leaderboard computes **per-stage marginal
-analysis** ("averaged over all else, bge-reranker adds +0.07 nDCG for
-+180 ms/query") — quality AND cost attribution is the "deep insights"
+analysis** ("averaged over all else, the cross-encoder refiner adds +0.07 nDCG
+for +180 ms/query") — quality AND cost attribution is the "deep insights"
 deliverable.
 
 ### 7.4 Secrets policy (applies to every adapter you write)
@@ -408,6 +408,44 @@ form `license = "Apache-2.0"` + `license-files = ["LICENSE"]` in pyproject.
 Rationale: explicit patent grant, contribution licensing (§5), ecosystem norm
 for RAG infra. Decided while sole-author — do not merge external PRs before
 LICENSE lands.
+
+### 7.6 ChunkIndex, composition algebra & multi-representation retrieval (DR-0001 v2)
+
+All retrieval representations of a corpus are owned by one `ChunkIndex`:
+`add(chunks)` writes every representation; `search(name, TEXT, k, filters)`
+encodes the query with the same encoder that encoded the corpus — never
+reimplement query encoding elsewhere. Constructor uses progressive disclosure:
+`dense=embedder` auto-names; mappings only for multiple representations.
+**Standing design rule (progressive disclosure):** the common case reads like
+English; the rare case is possible; the rare case's ceremony never leaks into
+the common case. Chunks NEVER carry vectors. The composition algebra:
+pre-retrieval variation = composite retrievers
+(`Fusion`/`Hybrid`/`MultiQuery`/`Hyde` — never new pipeline slots);
+post-retrieval variation = the `refine` chain
+(`Refiner.refine(query, candidates, k)`; the `reranker` kind is retired into
+it); write-side = `enrich` chain + `sinks` fan-out (`ChunkSink` — the one
+sanctioned `typing.Protocol`: a capability seam, not a stage contract; stage
+contracts remain ABCs). Fusion always: dedup by `chunk.id`, filters fan out to
+every sub-search, per-source rank attribution in `metadata["sources"]`.
+`VectorStore` is named+typed multi-vector with `ensure_schema` create-or-validate,
+`fetch(filters, limit)` (list values = membership), `update_vectors`. Classic
+BM25 stays a mounted corpus-stats `LexicalIndex`; SPLADE-style sparse is a
+`SparseEncoder` representation. `CachingEmbedder` is fingerprint-transparent with
+separate passage/query namespaces. Bare LLM completion is a `Callable[[str], str]`
+seam (`generator.complete`); do not invent a `completer` kind until a third
+independent consumer demands it. Empty chains are the null objects
+(`NoOpReranker`/`NoOpEnricher` are deleted — do not recreate them). Do not
+re-litigate: no retriever write-side, no `chunk.vectors`, no `QueryTransform`
+kind, no DAG framework, no capability negotiation. The architecture's acceptance
+test: the tuner must index once and enumerate retrieval/refinement strategies
+with ZERO tuner-motivated parameters on `ChunkIndex` — if one appears, stop and
+write DR-0002.
+
+Kinds (v2): `vector_store` (renamed from `store`), `embedder`, `sparse_encoder`,
+`lexical_index`, `index` (ChunkIndex — aggregate, wired from instances, not
+registry-built), `retriever`, `refiner` (replaces `reranker`), `enricher`,
+`generator`, `blob_store`, plus ingestion kinds. `ChunkSink` is a Protocol, not
+a kind.
 
 ---
 
@@ -501,11 +539,14 @@ instruction-prefix asymmetry) + storage (`memory` store for tests/tuning,
 `qdrant`, `LocalBlobStore`/`MinioBlobStore` per §7.2) → v0.4 retrieval
 (`dense`, `bm25`, `hybrid` Composite w/ RRF) + reranking (`bge-reranker`,
 `noop`) → v0.5 generation (context packing, token budget, citation markers
-resolved through chunk→page provenance) → v0.6 evaluation (IR metrics +
-`RagasEvaluator` per §7.3) → v0.7 tuning (SearchSpace, grid/random tuners,
-trial log, leaderboard w/ marginal analysis). Each milestone ships **at least
-two interchangeable implementations per stage** — swapping is the proof the
-library works.
+resolved through chunk→page provenance) → **v0.6 the DR-0001 v2 restructure
+(§7.6): `ChunkIndex` aggregate + multi-vector `vector_store`; retrieval collapses
+into the composition axis (`index`/`hybrid`/`fusion`/`multi-query`/`hyde`) and
+reranking dissolves into the `refiner` chain; `CachingEmbedder`; `sparse_encoder`
+interface** → v0.7 evaluation (IR metrics + `RagasEvaluator` per §7.3) + tuning
+(SearchSpace, grid/random tuners, trial log, leaderboard w/ marginal analysis).
+Each milestone ships **at least two interchangeable implementations per stage** —
+swapping is the proof the library works.
 
 ## 12. When uncertain, decide like this
 

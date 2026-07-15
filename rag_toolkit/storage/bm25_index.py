@@ -151,10 +151,14 @@ class BM25Index(LexicalIndex):
 
 
 def _matches(chunk: Chunk, filters: dict) -> bool:
+    """Shared filter semantics (D3): scalar ⇒ equality, list ⇒ membership."""
     for key, expected in filters.items():
         actual = getattr(chunk, key, None)
         if actual is None:
             actual = chunk.metadata.get(key)
-        if actual != expected:
+        if isinstance(expected, (list, tuple, set)):
+            if actual not in expected:
+                return False
+        elif actual != expected:
             return False
     return True

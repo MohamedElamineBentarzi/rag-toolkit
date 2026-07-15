@@ -37,6 +37,7 @@ from __future__ import annotations
 from abc import abstractmethod
 
 from ..core.component import Component
+from ..core.errors import StorageError
 
 __all__ = ["BlobStore"]
 
@@ -79,3 +80,15 @@ class BlobStore(Component):
     def exists(self, key: str) -> bool:
         """True iff a blob is stored under ``key``. Must not raise for a
         missing key — that is the whole point of the cheap pre-check."""
+
+    def url(self, key: str, *, expires_seconds: int = 3600) -> str:
+        """A directly-usable URL for the blob (a download link).
+
+        Optional capability — the durable stores implement it (``LocalBlobStore``
+        returns a ``file://`` URI; ``MinioBlobStore`` returns a presigned,
+        time-limited S3 GET URL). ``expires_seconds`` is honored by stores that
+        can expire links and ignored by those that can't (a local file path
+        doesn't expire). The default declares it unsupported rather than faking
+        a link — a `DocumentCatalog` uses this to turn a `doc_id` into a
+        download link."""
+        raise StorageError(f"{type(self).__name__}: url() not supported", key=key)

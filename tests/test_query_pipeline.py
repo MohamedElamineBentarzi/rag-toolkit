@@ -1,9 +1,10 @@
-"""QueryPipeline: Query -> retrieve -> rerank -> ScoredChunks."""
+"""QueryPipeline: Query -> retrieve -> refine chain -> truncate to k."""
 from rag_toolkit.core.contracts import Chunk, Query
 from rag_toolkit.embedding.hashing import HashingEmbedder
+from rag_toolkit.indexing.chunk_index import ChunkIndex
 from rag_toolkit.pipeline import QueryPipeline, TraceEvent
-from rag_toolkit.reranking.base import Reranker
-from rag_toolkit.retrieval.dense import DenseRetriever
+from rag_toolkit.refinement.base import Refiner
+from rag_toolkit.retrieval.index_retriever import IndexRetriever
 from rag_toolkit.storage.memory_store import MemoryVectorStore
 
 _TEXTS = [
@@ -13,54 +14,68 @@ _TEXTS = [
 ]
 
 
-def dense_retriever():
-    embedder = HashingEmbedder(dimensions=512)
-    store = MemoryVectorStore()
-    chunks = [
+def index_retriever():
+    index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder(dimensions=512))
+    index.add([
         Chunk(id=f"d:{i}", doc_id="d", text=t, index=i,
               char_start=i, char_end=i + 1, page_start=1, page_end=1)
         for i, t in enumerate(_TEXTS)
-    ]
-    store.upsert(chunks, embedder.embed_texts([c.text for c in chunks]))
-    return DenseRetriever(embedder=embedder, store=store)
+    ])
+    return IndexRetriever(index)
 
 
 def test_query_returns_ranked_results():
-    results = QueryPipeline(dense_retriever()).query("financial revenue", k=2)
+    results = QueryPipeline(index_retriever()).query("financial revenue", k=2)
     assert results and results[0].chunk.id == "d:1"
     assert len(results) == 2
 
 
 def test_accepts_a_string_or_a_query_object():
-    pipeline = QueryPipeline(dense_retriever())
+    pipeline = QueryPipeline(index_retriever())
     from_str = pipeline.query("financial revenue", k=1)
     from_obj = pipeline.query(Query(text="financial revenue"), k=1)
     assert [r.chunk.id for r in from_str] == [r.chunk.id for r in from_obj]
 
 
-def test_tracing_hook_sees_retrieve_and_rerank():
+def test_tracing_hook_sees_retrieve_then_each_refiner():
     events: list[TraceEvent] = []
-    QueryPipeline(dense_retriever(), trace=events.append).query("cats", k=3)
-    assert [e.stage for e in events] == ["retrieve", "rerank"]
+    QueryPipeline(index_retriever(), trace=events.append).query("cats", k=3)
+    # Empty refine chain ⇒ just a retrieve.
+    assert [e.stage for e in events] == ["retrieve"]
 
 
-def test_default_reranker_is_noop_passthrough():
-    # With the Null Object reranker, top-k is just the retriever's top-k.
-    retriever = dense_retriever()
+def test_empty_refine_chain_is_retrieve_then_truncate():
+    retriever = index_retriever()
     piped = QueryPipeline(retriever).query("financial", k=1)
     direct = retriever.retrieve(Query(text="financial"), 1)
     assert [r.chunk.id for r in piped] == [r.chunk.id for r in direct]
 
 
-def test_custom_reranker_is_applied():
-    class _ReverseReranker(Reranker):
+def test_refiner_chain_is_applied_and_truncated():
+    class _ReverseRefiner(Refiner):
         name = "reverse"
 
-        def rerank(self, query, candidates, top_k):
-            # Deliberately reorder to prove the pipeline uses the reranker.
-            return list(reversed(candidates))[:top_k]
+        def refine(self, query, candidates, k):
+            # Deliberately reorder to prove the pipeline runs the refiner.
+            return list(reversed(candidates))
 
-    retriever = dense_retriever()
-    out = QueryPipeline(retriever, reranker=_ReverseReranker()).query("cats", k=3)
+    retriever = index_retriever()
+    out = QueryPipeline(retriever, refine=[_ReverseRefiner()]).query("cats", k=3)
     baseline = retriever.retrieve(Query(text="cats"), 50)
     assert [r.chunk.id for r in out] == [r.chunk.id for r in reversed(baseline)][:3]
+
+
+def test_refiner_chain_runs_in_order():
+    stages: list[str] = []
+
+    def make(tag):
+        class _Tag(Refiner):
+            name = tag
+
+            def refine(self, query, candidates, k):
+                stages.append(tag)
+                return candidates
+        return _Tag()
+
+    QueryPipeline(index_retriever(), refine=[make("a"), make("b")]).query("x", k=2)
+    assert stages == ["a", "b"]

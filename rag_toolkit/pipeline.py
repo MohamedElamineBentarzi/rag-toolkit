@@ -35,12 +35,11 @@ multi-GB inputs. The parsed markdown is always small.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, Optional
+from typing import Callable, Iterable, Iterator, Optional, Sequence
 
 from .chunking.base import Chunker
 from .chunking.fixed import FixedChunker
@@ -54,19 +53,22 @@ from .core.contracts import (
     Source,
     SourceFormat,
 )
+from .core.errors import ConfigError
 from .embedding.base import Embedder
 from .embedding.hashing import HashingEmbedder
 from .enrichment.base import Enricher
-from .enrichment.noop import NoOpEnricher
 from .generation.base import Generator
 from .generation.extractive import ExtractiveGenerator
+from .indexing.catalog import DocumentCatalog, raw_key
+from .indexing.chunk_index import ChunkIndex
+from .indexing.sink import ChunkSink
 from .ingestion.detection import detect_format
 from .ingestion.parsers.auto import AutoParser
 from .ingestion.parsers.base import Parser
-from .reranking.base import Reranker
-from .reranking.noop import NoOpReranker
+from .refinement.base import Refiner
 from .retrieval.base import Retriever
-from .retrieval.dense import DenseRetriever
+from .retrieval.hybrid import HybridRetriever
+from .retrieval.index_retriever import IndexRetriever
 from .storage.base import BlobStore
 from .storage.memory_store import MemoryVectorStore
 from .storage.vector_store import VectorStore
@@ -103,34 +105,6 @@ def _noop_trace(event: TraceEvent) -> None:  # Null Object
     pass
 
 
-class _EmbeddingCache:
-    """Reuse vectors for text already embedded with this exact embedder.
-
-    Keyed by sha256(text) under the embedder's *fingerprint*, so identical text
-    (across documents or re-indexes) is embedded once, while swapping the
-    embedder/model is a clean miss — never a stale vector. Backed by any
-    `BlobStore` (local dir, MinIO); the cache knows how to (de)serialize, not
-    where the bytes live.
-    """
-
-    def __init__(self, store: BlobStore, embedder_fingerprint: str) -> None:
-        self._store = store
-        self._prefix = f"embeddings/{embedder_fingerprint}"
-
-    def _key(self, text: str) -> str:
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        return f"{self._prefix}/{digest}.json"
-
-    def get(self, text: str) -> Optional[list[float]]:
-        key = self._key(text)
-        if not self._store.exists(key):
-            return None
-        return json.loads(self._store.get(key).decode("utf-8"))
-
-    def put(self, text: str, vector: list[float]) -> None:
-        self._store.put(self._key(text), json.dumps(vector).encode("utf-8"))
-
-
 #: Canonical extension per known format — derived from the *detected* format,
 #: never the (possibly lying) filename. IMAGE/UNKNOWN fall back to the uri
 #: suffix since the concrete image type isn't carried in SourceFormat.
@@ -146,28 +120,48 @@ _CANONICAL_EXT = {
 
 
 class IndexingPipeline:
-    """Wire Source → Parser → Chunker, optionally persisting the truth store."""
+    """The complete write path: Source → Parser → Chunker → enrich chain →
+    batch → every sink (DR-0001 v2, D6).
+
+    Two chains and a fan-out. `enrich=[...]` is a chain over the chunk stream
+    (Iterator → Iterator, composing trivially — the empty chain *is* the null
+    object, so there is no `NoOpEnricher`). `sinks=[...]` is the write fan-out
+    (F4): each sink (a `ChunkIndex`, a `LexicalIndex`, a GraphRAG index) receives
+    every batch. Batching lives here so memory stays O(batch), never O(corpus).
+
+    Still a generator: `index(sources)` yields each chunk as it flows, so a
+    caller can observe the stream while the sinks are written underneath — the
+    tuner's `for _ in pipeline.index(corpus): pass` indexes once into all sinks.
+    """
 
     def __init__(
         self,
         parser: Optional[Parser] = None,
         chunker: Optional[Chunker] = None,
-        enricher: Optional[Enricher] = None,
+        enrich: Sequence[Enricher] = (),
+        sinks: Sequence[ChunkSink] = (),
         blob_store: Optional[BlobStore] = None,
+        batch_size: int = 32,
         trace: TraceHook = _noop_trace,
     ) -> None:
-        # AutoParser routes any format; FixedChunker is a sane default; the
-        # enricher defaults to NoOpEnricher so the flow never branches on it.
+        # AutoParser routes any format; FixedChunker is a sane default. The
+        # enrich chain and the sink fan-out are both empty by default.
         self.parser = parser if parser is not None else AutoParser()
         self.chunker = chunker if chunker is not None else FixedChunker()
-        self.enricher = enricher if enricher is not None else NoOpEnricher()
+        self.enrich = list(enrich)
+        self.sinks = list(sinks)
         self.blob_store = blob_store
+        self.batch_size = batch_size
         self.trace = trace
+        # doc_id → source provenance + download link, when a truth store exists.
+        self.catalog = DocumentCatalog(blob_store) if blob_store is not None else None
 
     def index(self, sources: Source | Iterable[Source]) -> Iterator[Chunk]:
-        """Stream chunks for every source, capturing truth blobs on the way."""
+        """Stream chunks for every source, capturing truth blobs and writing
+        batches to every sink on the way; persist each sink at the end."""
         if isinstance(sources, Source):
             sources = [sources]
+        batch: list[Chunk] = []
         for source in sources:
             content_hash = source.content_hash() if self.blob_store else None
             if self.blob_store is not None and content_hash is not None:
@@ -175,7 +169,24 @@ class IndexingPipeline:
             doc = self._parse(source, content_hash)
             if self.blob_store is not None and content_hash is not None:
                 self._store_parsed(source, doc, content_hash)
-            yield from self._chunk(source, doc)
+                # Manifest: doc_id → {source_uri, content_hash, ext}, so a
+                # citation's doc_id resolves to a name + download link in one hop.
+                assert self.catalog is not None
+                self.catalog.record(doc, content_hash, _extension_for(source))
+            for chunk in self._chunk(source, doc):
+                batch.append(chunk)
+                if len(batch) >= self.batch_size:
+                    self._write(batch)
+                    batch = []
+                yield chunk
+        if batch:
+            self._write(batch)
+        for sink in self.sinks:
+            sink.persist()
+
+    def _write(self, batch: list[Chunk]) -> None:
+        for sink in self.sinks:
+            sink.add(batch)
 
     # -- stages --------------------------------------------------------------
 
@@ -214,9 +225,13 @@ class IndexingPipeline:
     def _chunk(self, source: Source, doc: Document) -> Iterator[Chunk]:
         start = time.perf_counter()
         count = 0
-        # Chunk → Enrich → out. The enricher (NoOp by default) may augment
-        # chunk text or add synthetic chunks; it sees the parent document.
-        for chunk in self.enricher.enrich(self.chunker.chunk(doc), doc):
+        # Chunk → enrich chain → out. Each enricher wraps the previous stream
+        # (Iterator → Iterator) and sees the parent document; it may augment
+        # chunk text or add synthetic chunks. An empty chain is just the chunker.
+        stream: Iterator[Chunk] = self.chunker.chunk(doc)
+        for enricher in self.enrich:
+            stream = enricher.enrich(stream, doc)
+        for chunk in stream:
             count += 1
             yield chunk
         self.trace(TraceEvent(
@@ -228,7 +243,7 @@ class IndexingPipeline:
 
     def _store_raw(self, source: Source, content_hash: str) -> None:
         assert self.blob_store is not None
-        key = f"raw/{content_hash}/original{_extension_for(source)}"
+        key = raw_key(content_hash, _extension_for(source))
         start = time.perf_counter()
         hit = self.blob_store.exists(key)
         if not hit:
@@ -258,29 +273,27 @@ class IndexingPipeline:
 
 
 class QueryPipeline:
-    """Wire Query → retrieve → rerank → ranked ScoredChunks.
+    """Wire Query → retrieve → refine chain → truncate to k (DR-0001 v2, D9).
 
     The online mirror of `IndexingPipeline`, and just as thin: fetch a generous
-    candidate list from the retriever, hand it to the reranker for a precise
-    top-`k`. The reranker defaults to `NoOpReranker` (Null Object) so this code
-    never branches on whether reranking is configured — `retrieve 50 → rerank
-    to k` is one straight path whether the reranker is a cross-encoder or a
-    passthrough.
+    candidate list from the retriever, run it through the `refine=[...]` chain
+    (cross-encoder reranking, neighbor expansion, score floors — uniform stages
+    over one data shape), then truncate to the caller's `k`. An empty chain is a
+    straight `retrieve fetch_k → take k`; there is no null reranker to configure.
 
-    The retriever is a composed component (it wraps a populated store/index), so
-    it is passed in as an instance — same wiring philosophy as the retrievers
-    themselves.
+    The retriever is a composed component (it wraps a populated index), so it is
+    passed in as an instance — same wiring philosophy as the retrievers.
     """
 
     def __init__(
         self,
         retriever: Retriever,
-        reranker: Optional[Reranker] = None,
+        refine: Sequence[Refiner] = (),
         fetch_k: int = 50,
         trace: TraceHook = _noop_trace,
     ) -> None:
         self.retriever = retriever
-        self.reranker = reranker if reranker is not None else NoOpReranker()
+        self.refine = list(refine)
         self.fetch_k = fetch_k
         self.trace = trace
 
@@ -295,101 +308,144 @@ class QueryPipeline:
             {"retriever": self.retriever.name, "candidates": len(candidates)},
         ))
 
-        start = time.perf_counter()
-        results = self.reranker.rerank(query, candidates, k)
-        self.trace(TraceEvent(
-            "rerank", query.text, _ms(start),
-            {"reranker": self.reranker.name, "results": len(results)},
-        ))
-        return results
+        for refiner in self.refine:
+            start = time.perf_counter()
+            candidates = refiner.refine(query, candidates, k)
+            self.trace(TraceEvent(
+                "refine", query.text, _ms(start),
+                {"refiner": refiner.name, "candidates": len(candidates)},
+            ))
+        # The pipeline owns the final truncation (refiners may return more/fewer).
+        return candidates[:k]
 
 
 class RagPipeline:
-    """Facade: the whole loop in two calls — `index(sources)` then `ask(q)`.
+    """Composition root: the whole loop in two calls — `index(sources)` then
+    `ask(q)` — with live backends created once at the edge and shared by
+    reference (DR-0001 v2, D6).
 
-    Owns an IndexingPipeline (parse→chunk), an embedder + vector store (the
-    searchable index it fills), a QueryPipeline (retrieve→rerank), and a
-    generator. `index` embeds chunks in batches and upserts them; `ask` runs a
-    query straight through to a cited Answer.
+    The shared thing is one `ChunkIndex`: it is the write path's flagship sink
+    *and* the read path's backend, so query/corpus compatibility is structural,
+    not conventional. The write path fans out to the index (plus any
+    `extra_sinks`); the read path retrieves through a derived-or-supplied
+    retriever, runs the `refine` chain, and generates a cited Answer.
 
-    Defaults are the zero-dependency stack — `HashingEmbedder`,
-    `MemoryVectorStore`, `ExtractiveGenerator` — so `RagPipeline().index(src)`
-    then `.ask("...")` works out of the box with no extras and no API key. Swap
-    in `SentenceTransformerEmbedder` / `QdrantVectorStore` / `AnthropicGenerator`
-    for production by passing them in — the wiring doesn't change. For hybrid
-    retrieval or other custom shapes, compose `QueryPipeline` + a `Generator`
-    directly; this facade covers the dense 90% case.
+    Defaults are the zero-dependency stack — a `MemoryVectorStore` +
+    `HashingEmbedder` `ChunkIndex`, `ExtractiveGenerator` — so `RagPipeline()`
+    works out of the box with no extras and no API key. Swap in real backends by
+    constructing the `ChunkIndex` yourself (see `.dense`) and passing it in.
+
+    Retriever derivation (A1): no `retriever` ⇒ one representation gives an
+    `IndexRetriever`, several give a `HybridRetriever` over all of them.
     """
 
     def __init__(
         self,
-        embedder: Optional[Embedder] = None,
-        store: Optional[VectorStore] = None,
+        chunk_index: Optional[ChunkIndex] = None,
+        retriever: Optional[Retriever] = None,
         generator: Optional[Generator] = None,
         parser: Optional[Parser] = None,
         chunker: Optional[Chunker] = None,
-        enricher: Optional[Enricher] = None,
-        reranker: Optional[Reranker] = None,
+        enrich: Sequence[Enricher] = (),
+        refine: Sequence[Refiner] = (),
+        extra_sinks: Sequence[ChunkSink] = (),
         blob_store: Optional[BlobStore] = None,
-        embedding_cache: Optional[BlobStore] = None,
         fetch_k: int = 50,
         batch_size: int = 32,
         trace: TraceHook = _noop_trace,
     ) -> None:
-        self.embedder = embedder if embedder is not None else HashingEmbedder()
-        self.store = store if store is not None else MemoryVectorStore()
+        # Zero-config default index: memory store + hashing embedder.
+        if chunk_index is None:
+            chunk_index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder())
+        self.chunk_index = chunk_index
         self.generator = (
             generator if generator is not None else ExtractiveGenerator()
         )
-        self.batch_size = batch_size
-        # Opt-in embedding cache: skip re-embedding text already vectorized with
-        # this exact embedder (keyed by the embedder's fingerprint).
-        self._emb_cache = (
-            _EmbeddingCache(embedding_cache, self.embedder.fingerprint())
-            if embedding_cache is not None else None
-        )
+        # Retriever: derive per A1, or validate a supplied one is wired to THIS
+        # index — the last way to recreate the write/read split (P6) becomes a
+        # construction-time explosion.
+        if retriever is None:
+            retriever = _derive_retriever(chunk_index)
+        else:
+            wired = getattr(retriever, "index", None)
+            if wired is not None and wired is not chunk_index:
+                raise ConfigError(
+                    "RagPipeline: the supplied retriever is wired to a "
+                    "different ChunkIndex than chunk_index — pass a retriever "
+                    "over this index, or let RagPipeline derive one."
+                )
+        self.retriever = retriever
+        # The index is the flagship write sink; extra sinks (GraphRAG, alerts)
+        # fan out beside it.
         self.indexing = IndexingPipeline(
-            parser=parser, chunker=chunker, enricher=enricher,
-            blob_store=blob_store, trace=trace,
+            parser=parser, chunker=chunker, enrich=enrich,
+            sinks=[chunk_index, *extra_sinks], blob_store=blob_store,
+            batch_size=batch_size, trace=trace,
         )
-        retriever = DenseRetriever(embedder=self.embedder, store=self.store)
-        self.query_pipeline = QueryPipeline(retriever, reranker, fetch_k, trace)
+        self.query_pipeline = QueryPipeline(retriever, refine, fetch_k, trace)
+
+    @classmethod
+    def dense(
+        cls,
+        embedder: Optional[Embedder] = None,
+        store: Optional[VectorStore] = None,
+        **kw,
+    ) -> "RagPipeline":
+        """Convenience constructor for the 80% dense deployment: builds a
+        single-representation `ChunkIndex` and hands it to the composition
+        root. All other keywords forward to `__init__`."""
+        index = ChunkIndex(
+            store if store is not None else MemoryVectorStore(),
+            dense=embedder if embedder is not None else HashingEmbedder(),
+        )
+        return cls(chunk_index=index, **kw)
 
     def index(self, sources: Source | Iterable[Source]) -> None:
-        """Ingest, chunk, embed, and upsert — makes `sources` askable.
-
-        Chunks are embedded in batches (O(batch) memory, one embedder call per
-        batch instead of per chunk)."""
-        batch: list[Chunk] = []
-        for chunk in self.indexing.index(sources):
-            batch.append(chunk)
-            if len(batch) >= self.batch_size:
-                self._flush(batch)
-                batch = []
-        if batch:
-            self._flush(batch)
+        """Ingest → chunk → enrich → write every representation to the index
+        (and any extra sinks). Streaming and batched underneath."""
+        for _ in self.indexing.index(sources):
+            pass
 
     def ask(self, question: Query | str, k: int = 8) -> Answer:
-        """Retrieve → rerank → generate a cited Answer for `question`."""
+        """Retrieve → refine → generate a cited Answer for `question`."""
         query = question if isinstance(question, Query) else Query(text=question)
         context = self.query_pipeline.query(query, k)
         return self.generator.generate(query, context)
 
-    def _flush(self, chunks: list[Chunk]) -> None:
-        self.store.upsert(chunks, self._embed([c.text for c in chunks]))
+    # -- citation → source resolution ----------------------------------------
 
-    def _embed(self, texts: list[str]) -> list[list[float]]:
-        if self._emb_cache is None:
-            return self.embedder.embed_texts(texts)
-        # Reuse cached vectors; embed only the misses, then cache them.
-        cached: list[Optional[list[float]]] = [self._emb_cache.get(t) for t in texts]
-        misses = [i for i, v in enumerate(cached) if v is None]
-        if misses:
-            fresh = self.embedder.embed_texts([texts[i] for i in misses])
-            for i, vector in zip(misses, fresh):
-                self._emb_cache.put(texts[i], vector)
-                cached[i] = vector
-        return [v for v in cached if v is not None]  # order preserved, all filled
+    @property
+    def catalog(self):
+        """The `DocumentCatalog` (doc_id → provenance + download link), or `None`
+        when no `blob_store` is configured (nothing durable to resolve to)."""
+        return self.indexing.catalog
+
+    def source_uri(self, doc_id: str) -> Optional[str]:
+        """The original file name behind a citation's `doc_id` (for display)."""
+        return self._catalog_or_raise().source_uri(doc_id)
+
+    def download_url(self, doc_id: str, *, expires_seconds: int = 3600) -> Optional[str]:
+        """A download link to the original file behind a citation's `doc_id`."""
+        return self._catalog_or_raise().download_url(
+            doc_id, expires_seconds=expires_seconds
+        )
+
+    def _catalog_or_raise(self) -> DocumentCatalog:
+        if self.catalog is None:
+            raise ConfigError(
+                "RagPipeline: doc_id resolution needs a blob_store — construct "
+                "with blob_store=LocalBlobStore(...) (or MinioBlobStore(...))."
+            )
+        return self.catalog
+
+
+def _derive_retriever(index: ChunkIndex) -> Retriever:
+    """A1 derivation: one representation ⇒ a plain `IndexRetriever`; several ⇒
+    a `HybridRetriever` fusing all of them with RRF."""
+    reps = index.representations()
+    if len(reps) == 1:
+        return IndexRetriever(index)
+    return HybridRetriever(index)
 
 
 def _ms(start: float) -> float:

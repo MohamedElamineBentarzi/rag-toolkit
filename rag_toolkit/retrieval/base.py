@@ -34,3 +34,11 @@ class Retriever(Component):
     def retrieve(self, query: Query, k: int = 20) -> list[ScoredChunk]:
         """Return up to `k` chunks for `query`, highest score first, each
         stamped with `retriever_name` so fused results stay attributable."""
+
+    @property
+    def label(self) -> str:
+        """A distinguishing name for fusion attribution. Defaults to the
+        registry `name`, but parameterized/composite retrievers refine it (an
+        `IndexRetriever` folds in its representation) so two sub-retrievers of a
+        `FusionRetriever` don't collapse to one source key."""
+        return self.name

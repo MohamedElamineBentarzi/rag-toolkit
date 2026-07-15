@@ -12,6 +12,8 @@ import os
 
 import pytest
 
+from rag_toolkit.core.contracts import VectorSpec
+from rag_toolkit.core.errors import ConfigError
 from rag_toolkit.storage.qdrant_store import QdrantVectorStore
 from tests.contract_checks import assert_vector_store_contract
 
@@ -30,3 +32,45 @@ def store():
 
 def test_qdrant_satisfies_the_vector_store_contract(store):
     assert_vector_store_contract(store)
+
+
+def _attached(collection, client, models, **kw):
+    """A QdrantVectorStore sharing one in-process client (so two instances see
+    the same collection — separate `:memory:` clients would not)."""
+    store = QdrantVectorStore(collection=collection, **kw)
+    store._client, store._models = client, models
+    return store
+
+
+def test_existing_collection_with_mismatched_schema_raises_clearly():
+    pytest.importorskip("qdrant_client")
+    from qdrant_client import QdrantClient, models
+    client = QdrantClient(location=":memory:")
+    coll = "rag_toolkit_mismatch"
+
+    _attached(coll, client, models).ensure_schema(
+        [VectorSpec("dense", "dense", dimensions=8)]
+    )
+
+    b = _attached(coll, client, models)
+    with pytest.raises(ConfigError) as exc:
+        b.ensure_schema([VectorSpec("dense", "dense", dimensions=16)])
+    # The message names what's actually there and how to proceed.
+    assert "recreate_on_mismatch" in str(exc.value)
+
+
+def test_recreate_on_mismatch_drops_and_rebuilds():
+    pytest.importorskip("qdrant_client")
+    from qdrant_client import QdrantClient, models
+    client = QdrantClient(location=":memory:")
+    coll = "rag_toolkit_recreate"
+
+    _attached(coll, client, models).ensure_schema(
+        [VectorSpec("dense", "dense", dimensions=8)]
+    )
+
+    # Opt-in recreate: a conflicting schema is dropped and rebuilt, no raise.
+    _attached(coll, client, models, recreate_on_mismatch=True).ensure_schema(
+        [VectorSpec("dense", "dense", dimensions=16)]
+    )
+    assert client.get_collection(coll).config.params.vectors["dense"].size == 16

@@ -81,6 +81,28 @@ class AnthropicGenerator(Generator):
         }
         return text, usage
 
+    def complete(self, prompt: str) -> str:
+        """Bare text completion: `(prompt) -> str`, no context packing or
+        citation resolution (DR-0001 v2, D5/F5).
+
+        This is the `complete` seam that query-shaping retrievers
+        (`MultiQueryRetriever`, `HydeRetriever`) and contextual enrichers need —
+        a shape the `(query, context) -> Answer` `generate` contract
+        deliberately doesn't expose. Pass `generator.complete` wherever a
+        `Callable[[str], str]` is asked for."""
+        client = self._get_client()
+        try:
+            response = client.messages.create(
+                model=self.config.model,
+                max_tokens=self.config.max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as exc:  # noqa: BLE001 - normalize vendor errors
+            raise GenerationError(f"Claude completion failed: {exc}") from exc
+        return "".join(
+            block.text for block in response.content if block.type == "text"
+        )
+
     def _get_client(self) -> Any:
         if self._client is None:
             try:

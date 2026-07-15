@@ -41,6 +41,14 @@ class Embedder(Component):
         """Width of the vectors this embedder produces (the vector store needs
         it to size its index). Stable for the life of the instance."""
 
+    @property
+    def distance(self) -> str:
+        """The similarity metric this embedder's space wants ("cosine", "dot",
+        "euclidean"). The adapter knows its own metric, so per-representation
+        `VectorSpec`s need no wrapper classes; cosine is the safe default and
+        adapters override when their model prefers otherwise."""
+        return "cosine"
+
     @abstractmethod
     def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed a batch of *passages*, one vector per input, order preserved.

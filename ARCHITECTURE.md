@@ -58,12 +58,12 @@ INDEXING FLOW (offline, per corpus)
                                           retrieval)
 
 QUERY FLOW (online, per question)
-┌───────┐   ┌───────────┐   ┌──────────┐   ┌───────────┐
-│ Query │──▶│ Retriever │──▶│ Reranker │──▶│ Generator │──▶ Answer + citations
-└───────┘   └───────────┘   └──────────┘   └───────────┘
-              dense/sparse/    cross-        LLM with
-              hybrid/fusion    encoder       provenance-aware
-              (composable)     (or NoOp)     context packing
+┌───────┐   ┌───────────┐   ┌──────────────┐   ┌───────────┐
+│ Query │──▶│ Retriever │──▶│ Refiner chain │──▶│ Generator │──▶ Answer + citations
+└───────┘   └───────────┘   └──────────────┘   └───────────┘
+              index/hybrid/    rerank / expand /   LLM with
+              fusion/multi-q    threshold …         provenance-aware
+              (composable)      (uniform chain)     context packing
 
 TUNING LOOP (offline, per dataset)
 ┌─────────────┐    ┌───────┐    ┌───────────────────┐    ┌─────────────┐
@@ -88,15 +88,20 @@ intelligence lives in components; all wiring lives in config.
 | `Source`      | user        | Parser               | lazy `uri`/`data`, `open()`, `head()`, `content_hash()` |
 | `Page`        | Parser      | Chunker / assembly   | `number`, `markdown`, `ocr_applied`                    |
 | `Document`    | assembly    | Chunker / Enricher   | `markdown`, `pages: [PageSpan]`, `pages_for_span()`    |
-| `Chunk`       | Chunker     | Embedder / Store     | `text`, `doc_id`, `index`, `page_start/end`            |
+| `Chunk`       | Chunker     | Encoder / ChunkIndex | `text`, `doc_id`, `index`, `page_start/end`            |
 | `Query`       | user        | Retriever            | `text`, optional `filters`                             |
-| `ScoredChunk` | Retriever   | Reranker / Generator | `chunk`, `score`, `retriever_name`                     |
-| `Answer`      | Generator   | user / Evaluator     | `text`, `citations: [ChunkRef]`, `usage`               |
+| `ScoredChunk` | Retriever   | Refiner / Generator  | `chunk`, `score`, `retriever_name`                     |
+| `Citation`    | Generator   | user                 | `marker`, `chunk_id`, `doc_id`, `page_start/end`       |
+| `Answer`      | Generator   | user / Evaluator     | `text`, `citations: [Citation]`, `usage`               |
+| `SparseVector`| SparseEncoder | VectorStore        | `indices: tuple[int]`, `values: tuple[float]`          |
+| `VectorSpec`  | ChunkIndex  | VectorStore          | `name`, `kind: dense\|sparse`, `dimensions?`, `distance` |
+| `VectorValue` | encoders    | VectorStore          | alias `list[float] \| SparseVector`                    |
 
 Rules: contracts are plain dataclasses (stdlib only), immutable where they
-cross cache boundaries (`Source`, `PageSpan`), and every contract carries
-`metadata: dict` as a pressure valve so extensions never require schema
-changes.
+cross cache boundaries (`Source`, `PageSpan`, `SparseVector`, `VectorSpec`), and
+every contract carries `metadata: dict` as a pressure valve so extensions never
+require schema changes. The three vector contracts (DR-0001 v2) are the
+vocabulary of multi-representation storage; a `Chunk` never carries vectors.
 
 ---
 
@@ -142,8 +147,9 @@ class Enricher(Component):
 
 For contextual retrieval (prepend an LLM-generated situating sentence per
 chunk), metadata extraction, summaries. It receives the parent `Document`
-because context is exactly what a lone chunk lacks. `NoOpEnricher` is the
-default (Null Object pattern: pipeline code has zero `if enricher:` branches).
+because context is exactly what a lone chunk lacks. Enrichers compose as a chain
+(`enrich=[...]`); the *empty* chain is the null object, so there is no
+`NoOpEnricher` (DR-0001 v2, D6).
 
 ### 3.4 Embedder
 
@@ -164,16 +170,43 @@ prevents a whole class of silent retrieval bugs. Planned: `bge-m3`
 
 ```python
 class VectorStore(Component):
-    kind = "store"
-    def upsert(self, chunks: Sequence[Chunk], vectors: Sequence[list[float]]) -> None: ...
-    def search(self, vector: list[float], k: int, filters: dict | None = None) -> list[ScoredChunk]: ...
+    kind = "vector_store"                 # renamed from "store" in DR-0001 v2
+    def ensure_schema(self, specs: Sequence[VectorSpec]) -> None: ...
+    def upsert(self, chunks: Sequence[Chunk],
+               vectors: Mapping[str, Sequence[VectorValue]]) -> None: ...
+    def search(self, name: str, vector: VectorValue, k: int,
+               filters: dict | None = None) -> list[ScoredChunk]: ...
+    def fetch(self, filters: dict, limit: int = 100) -> list[Chunk]: ...
+    def update_vectors(self, name: str, chunk_ids: Sequence[str],
+                       vectors: Sequence[VectorValue]) -> None: ...
     def persist(self) -> None: ...
 ```
 
-Planned: `memory` (numpy, for tests and tuning on small corpora), `qdrant`,
-`lancedb`. Lexical (BM25) indexes implement a sibling `LexicalIndex` kind so
-hybrid retrieval composes two narrow interfaces instead of one fat one
-(Interface Segregation).
+A store is a **named, typed, multi-vector** index (DR-0001 v2, D3): each corpus
+representation ("dense", "splade", …) is one named space, declared up front via
+`ensure_schema` (create-or-validate — a mismatch raises, never coerces).
+`fetch` is point retrieval without a query vector (neighbor expansion,
+get-by-index); list filter values mean membership (`{"index": [3, 5]}`).
+Planned: `memory` (reference impl, tests + tuner), `qdrant` (native named +
+sparse vectors), `lancedb`. Classic BM25 is a sibling `LexicalIndex` kind
+(corpus-relative, query-time idf — not a stored vector) mounted inside a
+`ChunkIndex`; static SPLADE-style sparse is a `SparseEncoder` producing a stored
+`SparseVector`. Two scoring models, one read API (Interface Segregation).
+
+### 3.5a ChunkIndex (the aggregate over representations)
+
+```python
+class ChunkIndex(Component):              # kind = "index"; wired from instances
+    def __init__(self, store, dense=None, sparse=None, lexical=None): ...
+    def add(self, chunks): ...            # writes every representation
+    def search(self, representation, text, k, filters=None): ...  # TEXT in, not a vector
+    def fetch(self, filters, limit=100): ...
+```
+
+`ChunkIndex` owns all retrieval representations of one corpus on both paths — the
+consistency boundary that guarantees queries are encoded by the same encoder that
+encoded the corpus (DR-0001 v2, D1). It is the composition root's shared object:
+the write path's flagship `ChunkSink` and the read path's backend.
 
 **BlobStore** (`kind = "blob_store"`, `put`/`get`/`exists` over opaque keys) is
 the companion *truth store* — raw ingested bytes and the parse cache live here
@@ -195,21 +228,34 @@ class Retriever(Component):
     def retrieve(self, query: Query, k: int = 20) -> list[ScoredChunk]: ...
 ```
 
-Planned: `dense`, `bm25`, `hybrid` (Composite: owns a dense and a sparse
-retriever plus a fusion strategy — RRF or weighted), `multi-query`. Composing
-retrievers out of retrievers is the clearest payoff of "composition over
-inheritance": no `HybridDenseBM25RRFRetriever` class explosion.
+Retrievers are read-only *views* over a `ChunkIndex` and compose like
+`nn.Module` (DR-0001 v2, D5): `IndexRetriever` (one representation — replaces the
+old `dense`/`bm25`), `HybridRetriever` (sugar fusing all representations of one
+index), `FusionRetriever` (the general node — fuses any retrievers: across
+representations, across indexes for federation, across paradigms),
+`MultiQueryRetriever` / `HydeRetriever` (query shaping via the `complete` seam).
+Composing retrievers out of retrievers is the clearest payoff of "composition
+over inheritance": no `HybridDenseBM25RRFRetriever` class explosion, and query
+shaping is composition, not a new pipeline slot. Fusion mechanics (dedup by
+`chunk.id`, RRF, per-source attribution, filter fan-out) live once in
+`retrieval/fusion.py`.
 
-### 3.7 Reranker
+### 3.7 Refiner (the post-retrieval chain)
 
 ```python
-class Reranker(Component):
-    kind = "reranker"
-    def rerank(self, query: Query, candidates: list[ScoredChunk], top_k: int) -> list[ScoredChunk]: ...
+class Refiner(Component):
+    kind = "refiner"                      # replaces "reranker" (DR-0001 v2, D9)
+    def refine(self, query: Query, candidates: list[ScoredChunk], k: int) -> list[ScoredChunk]: ...
 ```
 
-Planned: `bge-reranker` (cross-encoder), `cohere`, `noop` (Null Object —
-also the honest baseline the tuner compares against).
+Everything after retrieval — cross-encoder reranking, sentence-window / parent
+expansion, MMR diversity, score floors — is the same shape
+(`list[ScoredChunk] → list[ScoredChunk]`), so it is one uniform chain
+(`refine=[...]`), the MongoDB-aggregation half of the composition algebra. `k` is
+a budget hint; the pipeline enforces the final truncation. Shipped:
+`cross-encoder` (the old `bge-reranker`, ported), `keyword`, `neighbor-expander`
+(char-offset overlap-safe small-to-big expansion), `score-threshold`. The empty
+chain is the null object — there is no `NoOpReranker`.
 
 ### 3.8 Generator
 
@@ -248,8 +294,8 @@ Two families with very different costs (see §6): retrieval metrics
 | Facade | `rk.ingest()`, `AutoParser`, future `RagPipeline` | one obvious call for the 90% case, full machinery still reachable underneath |
 | Template Method | `Parser.parse()` over abstract `iter_pages()` | assembly + provenance implemented once, correctly, for every parser |
 | Iterator / generator pipeline | `iter_pages`, `chunk_stream`, `recognize_batch` | O(batch) memory, backpressure for free, no queues or threads |
-| Composite | `AutoParser`, future `HybridRetriever` | components made of components, uniform to callers (Liskov) |
-| Null Object | `NoOpReranker`, `NoOpEnricher` | optional stages without `if x is not None` scattered through pipelines |
+| Composite | `AutoParser`, `HybridRetriever`, `FusionRetriever` | components made of components, uniform to callers (Liskov) |
+| Null Object (as empty chain) | empty `refine=[]` / `enrich=[]` | optional stages without `if x is not None`; the empty chain *is* the null object (no `NoOp*` classes) |
 | Immutable value objects | `Source`, `PageSpan`, `PageImage` | safe to share across caches and (later) threads |
 | Lazy initialization | vendor SDK imports, converter cache, OCR clients | zero-dep core; heavy models loaded once, reused everywhere |
 
@@ -326,8 +372,9 @@ class SearchSpace:
     # space = SearchSpace(
     #     chunker=[choice("recursive", size=[256, 512, 1024], overlap=[0, 64]),
     #              choice("markdown-aware")],
-    #     retriever=[choice("dense"), choice("hybrid", fusion=["rrf"])],
-    #     reranker=[choice("noop"), choice("bge-reranker", top_k=[5, 10])],
+    #     retriever=[choice("index", representation="dense"), choice("hybrid")],
+    #     refine=[[], [choice("cross-encoder", top_k=[5, 10])],
+    #             [choice("neighbor-expander"), choice("cross-encoder")]],
     # )
 
 class Tuner(Component):            # Strategy, again
@@ -385,8 +432,8 @@ survivors graduate to the full set. Judge verdicts are themselves cached by
 ### 6.4 Insights, not just a winner
 
 The leaderboard computes **per-stage marginal analysis** by grouping trials:
-"averaged over all other choices, `bge-reranker` adds +0.07 nDCG@10 for
-+180 ms/query; chunk size 512→1024 costs −0.04 recall@10." That per-dimension
+"averaged over all other choices, the `cross-encoder` refiner adds +0.07
+nDCG@10 for +180 ms/query; chunk size 512→1024 costs −0.04 recall@10." That per-dimension
 attribution — quality *and* cost — is the "deep insights" deliverable, and it
 falls out of the trial log structure for free.
 
@@ -426,18 +473,19 @@ entry-point group; they appear in the registry automatically.
 
 ```
 rag_toolkit/
-  core/          contracts, component, registry, errors        [v0.1 ✓]
+  core/          contracts (+ SparseVector/VectorSpec), component, registry [v0.1 ✓]
   ingestion/     detection, parsers/, ocr/                     [v0.1 ✓]
   chunking/      fixed, markdown-aware ✓; chonkie adapter      [v0.2]
-  enrichment/    noop ✓, heading ✓, contextual ✓ (LLM)          [v0.2]
-  embedding/     hashing ✓, sentence-transformers ✓; API adapters [v0.3]
-  storage/       blob (local,minio) + vector (memory,qdrant) ✓  [v0.3]
-  retrieval/     dense ✓, bm25 ✓, hybrid RRF ✓                 [v0.4]
-  reranking/     noop ✓, keyword ✓, bge-reranker ✓             [v0.4]
-  generation/    extractive ✓, anthropic ✓; packing+citations ✓ [v0.5]
-  evaluation/    retrieval + LLM-judge metrics                 [v0.6]
+  enrichment/    heading ✓, contextual ✓ (LLM)                  [v0.2]
+  embedding/     hashing ✓, sentence-transformers ✓, caching ✓; sparse_encoder (iface) [v0.3/0.6]
+  storage/       blob (local,minio) + vector_store (memory,qdrant, multi-vector) ✓ [v0.3/0.6]
+  indexing/      ChunkIndex ✓ (aggregate over representations), ChunkSink [v0.6]
+  retrieval/     index ✓, hybrid ✓, fusion ✓, multi-query ✓, hyde ✓ (composition axis) [v0.4/0.6]
+  refinement/    keyword ✓, cross-encoder ✓, neighbor-expander ✓, score-threshold ✓ (was reranking/) [v0.4/0.6]
+  generation/    extractive ✓, anthropic ✓ (+.complete); packing+citations ✓ [v0.5]
+  evaluation/    retrieval + LLM-judge metrics                 [v0.7]
   tuning/        search space, tuners, trial log, leaderboard  [v0.7]
-  pipeline.py    IndexingPipeline ✓ QueryPipeline ✓ RagPipeline ✓ [v0.2+]
+  pipeline.py    IndexingPipeline ✓ QueryPipeline ✓ RagPipeline ✓ (composition root) [v0.2+]
 ```
 
 Each milestone ships with contract tests, a cookbook example, and at least

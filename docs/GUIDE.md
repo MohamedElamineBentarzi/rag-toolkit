@@ -49,7 +49,7 @@ route to:
 | `docling` | PDF/DOCX/PPTX/XLSX/HTML/image parsing | `DoclingParser` |
 | `mistral` | Mistral cloud OCR | `MistralOcrEngine` |
 | `google` | Google Document AI OCR | `GoogleDocAiOcrEngine` |
-| `sentence-transformers` | real embeddings + cross-encoder rerank | `SentenceTransformerEmbedder`, `BgeReranker` |
+| `sentence-transformers` | real embeddings + cross-encoder rerank | `SentenceTransformerEmbedder`, `CrossEncoderReranker` |
 | `qdrant` | Qdrant vector store | `QdrantVectorStore` |
 | `minio` | S3-compatible blob storage | `MinioBlobStore` |
 | `anthropic` | Claude generation + contextual enrichment | `AnthropicGenerator`, `ContextualEnricher` |
@@ -129,6 +129,14 @@ All in `rag_toolkit` (re-exported from `rag_toolkit.core.contracts`).
 | `ScoredChunk` | retriever/store | `chunk`, `score`, `retriever_name`, `metadata` |
 | `Citation` | generator | `marker`, `chunk_id`, `doc_id`, `page_start/end` |
 | `Answer` | generator | `text`, `citations: [Citation]`, `usage: dict`, `metadata` |
+| `SparseVector` | sparse encoder | `indices: tuple[int]`, `values: tuple[float]` (parallel term-index/weight arrays) |
+| `VectorSpec` | `ChunkIndex` → store | `name`, `kind: "dense"\|"sparse"`, `dimensions?`, `distance` — one named vector space's schema |
+| `VectorValue` | encoders | type alias: `list[float] \| SparseVector` (a dense or sparse vector) |
+
+The last three (DR-0001 v2) are the vocabulary of multi-representation storage:
+a `ChunkIndex` declares one `VectorSpec` per representation, the store holds one
+`VectorValue` per (chunk × representation). A `Chunk` never carries vectors —
+they're derived, keyed data in the store.
 
 Constructing a `Source`:
 
@@ -174,7 +182,7 @@ from rag_toolkit import registry
 emb = registry.create("embedder", "hashing", dimensions=512)
 chunker = registry.create("chunker", "fixed", chunk_chars=800, overlap_chars=100)
 
-registry.available("reranker")      # ['bge-reranker', 'keyword', 'noop']
+registry.available("refiner")       # ['cross-encoder', 'keyword', 'neighbor-expander', 'score-threshold']
 registry.available()                # every (kind:name) registered
 ```
 
@@ -213,12 +221,14 @@ from `rag_toolkit` (e.g. `from rag_toolkit import Parser`) or its subsystem.
 | Parser (`parser`) | `iter_pages(source) → Iterator[Page]` | `auto`, `plaintext`, `docling` | `docling` for docling |
 | OCR engine (`ocr`) | `recognize(PageImage) → OcrResult` | `mistral`, `google-docai` | `mistral` / `google` |
 | Chunker (`chunker`) | `iter_spans(document) → Iterator[(int,int)]` | `fixed`, `markdown-aware` | — |
-| Enricher (`enricher`) | `enrich(chunks, document) → Iterator[Chunk]` | `noop`, `heading`, `contextual` | `anthropic` for contextual |
-| Embedder (`embedder`) | `embed_texts`, `embed_query`, `dimensions` | `hashing`, `sentence-transformers` | `sentence-transformers` |
-| Vector store (`store`) | `upsert(chunks, vecs)`, `search(vec, k, filters)` | `memory`, `qdrant` | `qdrant` |
+| Enricher (`enricher`) | `enrich(chunks, document) → Iterator[Chunk]` | `heading`, `contextual` | `anthropic` for contextual |
+| Embedder (`embedder`) | `embed_texts`, `embed_query`, `dimensions`, `distance` | `hashing`, `sentence-transformers`, `caching` | `sentence-transformers` |
+| Sparse encoder (`sparse_encoder`) | `encode_texts`, `encode_query` | *(fast-follow)* | — |
+| Vector store (`vector_store`) | `ensure_schema`, `upsert(chunks, {name: vecs})`, `search(name, vec, k, filters)`, `fetch` | `memory`, `qdrant` | `qdrant` |
 | Lexical index (`lexical_index`) | `add(chunks)`, `search(text, k, filters)` | `bm25` | — |
-| Retriever (`retriever`) | `retrieve(query, k) → [ScoredChunk]` | `dense`, `bm25`, `hybrid` | — |
-| Reranker (`reranker`) | `rerank(query, cands, top_k) → [ScoredChunk]` | `noop`, `keyword`, `bge-reranker` | `sentence-transformers` for bge |
+| ChunkIndex (`index`) | `add`, `search(rep, text, k)`, `fetch` — wired from instances | `chunk-index` | — |
+| Retriever (`retriever`) | `retrieve(query, k) → [ScoredChunk]` | `index`, `hybrid`, `fusion`, `multi-query`, `hyde` | — |
+| Refiner (`refiner`) | `refine(query, cands, k) → [ScoredChunk]` | `keyword`, `cross-encoder`, `neighbor-expander`, `score-threshold` | `sentence-transformers` for cross-encoder |
 | Generator (`generator`) | `generate(query, context) → Answer` | `extractive`, `anthropic` | `anthropic` |
 | Blob store (`blob_store`) | `put`, `get`, `exists` | `local`, `minio` | `minio` |
 
@@ -262,15 +272,18 @@ section. Both fill `char_start/end` and `page_start/end`.
 ### 6.3 Enricher — augment chunks with context (optional)
 
 ```python
-from rag_toolkit import NoOpEnricher, HeadingEnricher
+from rag_toolkit import HeadingEnricher
 
 # heading: prepend each chunk's section heading so it embeds with its context
 enriched = list(HeadingEnricher().enrich(iter(chunks), doc))
 ```
 
-`noop` (default) passes through; `heading` prepends the nearest markdown heading
+Enrichers compose as a chain (`enrich=[...]`); the empty chain is the null object
+(there is no `NoOpEnricher`). `heading` prepends the nearest markdown heading
 (deterministic contextual retrieval); `contextual` uses Claude to write a
-situating sentence per chunk (`[anthropic]`). Enrichers preserve provenance.
+situating sentence per chunk (`[anthropic]`). Enrichers preserve provenance; an
+enricher that *adds* chunks must mark them `metadata["synthetic"]=True` with a
+parent-derived id.
 
 ### 6.4 Embedder — text → vectors
 
@@ -293,54 +306,84 @@ emb = SentenceTransformerEmbedder(model="intfloat/e5-large-v2",
                                   query_instruction="query: ")     # prefix queries only
 ```
 
-### 6.5 Vector store & lexical index — the searchable indexes
+### 6.5 ChunkIndex — the aggregate over a corpus's representations
+
+A corpus can be searchable several ways at once (dense embeddings, static-sparse,
+classic BM25). A `ChunkIndex` owns all of them: it declares its vector schema
+eagerly, writes every representation on `add`, and — crucially — encodes queries
+with the *same* encoder that encoded the corpus, so query/corpus compatibility is
+structural, not a convention you can break.
 
 ```python
-from rag_toolkit import MemoryVectorStore, BM25Index
+from rag_toolkit import ChunkIndex, MemoryVectorStore, HashingEmbedder, BM25Index
 
-store = MemoryVectorStore()                            # dense (cosine)
-store.upsert(chunks, emb.embed_texts([c.text for c in chunks]))
-hits = store.search(emb.embed_query("q"), k=5, filters={"doc_id": "abc"})
+index = ChunkIndex(
+    store=MemoryVectorStore(),          # or QdrantVectorStore(url=..., collection=...)
+    dense=emb,                          # auto-named representation "dense"
+    lexical=BM25Index(),                # corpus-stats BM25, mounted as "lexical"
+)
+index.add(chunks)                       # writes every representation, one pass
+index.representations()                 # ['dense', 'lexical']
 
-index = BM25Index()                                    # sparse (lexical)
-index.add(chunks)
-hits = index.search("exact terms", k=5)
+# TEXT in, not a vector — the index owns query encoding, per representation:
+hits = index.search("dense", "what was revenue?", k=5)         # dense space
+hits = index.search("lexical", "exact terms", k=5, filters={"doc_id": "abc"})
+neighbors = index.fetch({"doc_id": "abc", "index": [3, 4, 5]}) # point retrieval, no vector
 ```
 
-Both are idempotent by `chunk.id` and return `ScoredChunk`s with the full chunk
-(text + provenance) inline, so query time never touches the blob store. Swap in
+The underlying `VectorStore` is named+typed multi-vector: `ensure_schema` creates
+or *validates* the collection (a mismatch raises, never coerces), and `fetch`
+does point retrieval without a query vector. Swap in
 `QdrantVectorStore(url="http://localhost:6333")` for a real server (`[qdrant]`).
+A/B two dense models by passing a mapping: `dense={"bge": a, "e5": b}`.
 
-### 6.6 Retriever — query → ranked chunks
+### 6.6 Retriever — query → ranked chunks (the composition axis)
 
-Retrievers are composed from *populated* backends (a store/index that already
-holds the corpus):
+Retrievers are read-only *views* over a `ChunkIndex`, and they compose like
+`nn.Module` — retrievers wrapping retrievers:
 
 ```python
-from rag_toolkit import DenseRetriever, Bm25Retriever, HybridRetriever, Query
+from rag_toolkit import (IndexRetriever, HybridRetriever, FusionRetriever,
+                         MultiQueryRetriever, HydeRetriever, Query)
 
-dense = DenseRetriever(embedder=emb, store=store)
-bm25 = Bm25Retriever(index=index)
-hybrid = HybridRetriever(retrievers=[dense, bm25], k_rrf=60)   # RRF fusion
-
+dense = IndexRetriever(index, representation="dense")  # one representation
+hybrid = HybridRetriever(index)                        # sugar: fuse ALL representations (RRF)
 hits = hybrid.retrieve(Query(text="what was revenue?"), k=10)
+
+# General fusion — across representations, across indexes (federation), across paradigms:
+fused = FusionRetriever([IndexRetriever(legal), IndexRetriever(hr)], fusion="rrf")
+
+# Query shaping is composition, not a pipeline slot (needs a text-completion seam):
+rag_fusion = MultiQueryRetriever(hybrid, complete=gen.complete, n=4)
+hyde = HydeRetriever(dense, complete=gen.complete)
 ```
 
-`hybrid` fuses sub-retrievers by **rank** (Reciprocal Rank Fusion), so it blends
-dense and lexical results whose raw scores are on incompatible scales. Optional
-per-retriever `weights=[...]` gives weighted fusion.
+Fusion blends sub-retrievers by **rank** (Reciprocal Rank Fusion), so it mixes
+results whose raw scores are on incompatible scales; it dedups by `chunk.id`,
+fans filters out to every sub-search, and records per-source ranks in
+`metadata["sources"]`. Optional per-retriever `weights=[...]` gives weighted
+fusion. `representation` is optional on `IndexRetriever` when the index has
+exactly one.
 
-### 6.7 Reranker — precise second pass (optional)
+### 6.7 Refiner chain — the post-retrieval pass (optional)
+
+Everything after retrieval — reranking, expansion, score floors — is one uniform
+shape (`refine(query, candidates, k) -> candidates`), so it composes as a list:
 
 ```python
-from rag_toolkit import NoOpReranker, KeywordReranker
+from rag_toolkit import (CrossEncoderReranker, NeighborExpander, ScoreThreshold,
+                         KeywordRefiner)
 
-reranked = KeywordReranker().rerank(query, candidates, top_k=8)
+chain = [NeighborExpander(index, window=2),            # small-to-big context
+         CrossEncoderReranker(model="BAAI/bge-reranker-v2-m3"),  # precise reorder
+         ScoreThreshold(min_score=0.2)]                # drop the weak tail
 ```
 
-`noop` (default) preserves order; `keyword` reorders by query-term overlap;
-`bge-reranker` is a cross-encoder (`[sentence-transformers]`) that reads
-query+candidate together for the best accuracy.
+`keyword` reorders by query-term overlap (zero-dep); `cross-encoder` reads
+query+candidate together for the best accuracy (`[sentence-transformers]`);
+`neighbor-expander` stitches each hit's neighbors into a bigger passage
+(overlap-safe via char offsets). The empty chain is the null object — there is
+no `NoOpReranker`.
 
 ### 6.8 Generator — context → cited answer
 
@@ -384,20 +427,25 @@ intelligence is in the components.
 ```python
 from rag_toolkit import IndexingPipeline, Source
 
-pipe = IndexingPipeline()                              # AutoParser + FixedChunker + NoOpEnricher
+pipe = IndexingPipeline()                              # AutoParser + FixedChunker, empty enrich chain
 for chunk in pipe.index(Source.from_path("report.pdf")):
-    embed_and_store(chunk)
+    ...                                                # observe the stream
+
+# Fan out the write path to any sink (a ChunkIndex, a LexicalIndex, a GraphRAG index):
+for _ in IndexingPipeline(sinks=[index]).index(sources):
+    pass                                               # index once into all sinks
 ```
 
 Optional truth-store capture (raw bytes + parse cache, content-addressed,
-deduped) and a tracing hook:
+deduped), an enrich *chain*, and a tracing hook:
 
 ```python
 from rag_toolkit import IndexingPipeline, LocalBlobStore, HeadingEnricher, MarkdownChunker
 
 pipe = IndexingPipeline(
     chunker=MarkdownChunker(),
-    enricher=HeadingEnricher(),
+    enrich=[HeadingEnricher()],                        # a chain; empty is the null object
+    sinks=[index],
     blob_store=LocalBlobStore(root="./.rag_cache/blobs"),
     trace=print,                                       # receives TraceEvent per stage
 )
@@ -407,29 +455,32 @@ chunks = list(pipe.index([Source.from_path(p) for p in ("a.pdf", "b.pdf")]))
 ### 7.2 QueryPipeline — `Query → ScoredChunks`
 
 ```python
-from rag_toolkit import QueryPipeline
+from rag_toolkit import QueryPipeline, CrossEncoderReranker
 
-qp = QueryPipeline(retriever=hybrid, reranker=KeywordReranker(), fetch_k=50)
-hits = qp.query("what was Q3 revenue?", k=8)           # retrieve 50 → rerank to 8
+qp = QueryPipeline(hybrid, refine=[CrossEncoderReranker(...)], fetch_k=50)
+hits = qp.query("what was Q3 revenue?", k=8)           # retrieve 50 → refine → take 8
 ```
 
-### 7.3 RagPipeline — the facade (`index` + `ask`)
+### 7.3 RagPipeline — the composition root (`index` + `ask`)
 
-Owns the whole loop. Defaults are the zero-dependency stack, so it runs with no
-extras; pass components to go to production without changing the wiring.
+Owns the whole loop over one shared `ChunkIndex` (the write path's flagship sink
+*and* the read path's backend). Defaults are the zero-dependency stack, so it
+runs with no extras; pass a `ChunkIndex` to go to production.
 
 ```python
 from rag_toolkit import RagPipeline, Source
 
-rag = RagPipeline()                                    # hashing + memory + extractive
+rag = RagPipeline()                                    # memory+hashing index, extractive gen
 rag.index(Source.from_path("report.pdf"))
 answer = rag.ask("What was Q3 revenue?", k=5)
 ```
 
-`RagPipeline(...)` accepts `embedder`, `store`, `generator`, `parser`, `chunker`,
-`enricher`, `reranker`, `blob_store`, `fetch_k`, `batch_size`, `trace`. It builds
-a `DenseRetriever` over your embedder+store internally; for hybrid/custom
-retrieval, compose `QueryPipeline` + a `Generator` yourself.
+`RagPipeline(...)` accepts `chunk_index`, `retriever`, `generator`, `parser`,
+`chunker`, `enrich=[...]`, `refine=[...]`, `extra_sinks=[...]`, `blob_store`,
+`fetch_k`, `batch_size`, `trace`. If you don't pass a `retriever` it derives one
+(an `IndexRetriever` for a single-representation index, a `HybridRetriever` for
+several). A retriever wired to a *different* index than `chunk_index` explodes at
+construction. For the 80% dense case: `RagPipeline.dense(embedder=, store=)`.
 
 ### 7.4 Persistence & caching
 
@@ -442,12 +493,16 @@ retrieval, compose `QueryPipeline` + a `Generator` yourself.
 | `BM25Index` (no store) | ❌ in-memory — **persist it explicitly** (below) |
 | `LocalBlobStore` / `MinioBlobStore` | ✅ the durable truth (raw bytes + parse cache) |
 
-With a **server-backed Qdrant**, re-instantiating a `RagPipeline` with the **same
-store config and the same embedder** lets you query immediately — no re-index:
+With a **server-backed Qdrant**, re-instantiating a `RagPipeline` over a
+`ChunkIndex` with the **same store config and the same encoders** lets you query
+immediately — no re-index (`ensure_schema` *validates* the existing collection):
 
 ```python
-rag = RagPipeline(embedder=SentenceTransformerEmbedder(model="BAAI/bge-m3"),
-                  store=QdrantVectorStore(url="http://localhost:6333", collection="docs"))
+index = ChunkIndex(
+    store=QdrantVectorStore(url="http://localhost:6333", collection="docs"),
+    dense=SentenceTransformerEmbedder(model="BAAI/bge-m3"),
+)
+rag = RagPipeline(chunk_index=index)
 rag.ask("...")           # works after a restart — Qdrant already holds everything
 ```
 
@@ -464,12 +519,17 @@ index.add(chunks)        # idempotent by chunk.id — re-adds are skipped
 index.persist()          # flush to the store
 ```
 
-**Skip re-embedding** unchanged chunks with an opt-in embedding cache (keyed by
-`text × embedder.fingerprint()`, so swapping the model is a clean miss):
+**Skip re-embedding** unchanged chunks by wrapping any embedder in
+`CachingEmbedder` (keyed by `text × inner.fingerprint()`, so swapping the model
+is a clean miss; the wrapper is fingerprint-transparent, so cached and uncached
+runs stay the same trial):
 
 ```python
-rag = RagPipeline(embedder=SentenceTransformerEmbedder(model="BAAI/bge-m3"),
-                  embedding_cache=MinioBlobStore(bucket="rag"))
+from rag_toolkit import CachingEmbedder, ChunkIndex
+
+cached = CachingEmbedder(SentenceTransformerEmbedder(model="BAAI/bge-m3"),
+                         cache=MinioBlobStore(bucket="rag"))
+rag = RagPipeline(chunk_index=ChunkIndex(store=my_store, dense=cached))
 rag.index(sources)       # first run embeds; a later run reuses cached vectors
 ```
 
@@ -503,15 +563,20 @@ print(rag.ask("What was revenue?", k=1).text)
 
 ```python
 from rag_toolkit import (
-    RagPipeline, SentenceTransformerEmbedder, QdrantVectorStore,
-    AnthropicGenerator, HeadingEnricher, MarkdownChunker,
+    RagPipeline, ChunkIndex, SentenceTransformerEmbedder, QdrantVectorStore,
+    BM25Index, AnthropicGenerator, CrossEncoderReranker, HeadingEnricher,
+    MarkdownChunker,
 )
 
 rag = RagPipeline(
-    embedder=SentenceTransformerEmbedder(model="BAAI/bge-m3"),
-    store=QdrantVectorStore(url="http://localhost:6333", collection="docs"),
+    chunk_index=ChunkIndex(
+        store=QdrantVectorStore(url="http://localhost:6333", collection="docs"),
+        dense=SentenceTransformerEmbedder(model="BAAI/bge-m3"),
+        lexical=BM25Index(),                           # ⇒ HybridRetriever, derived
+    ),
     generator=AnthropicGenerator(model="claude-opus-4-8"),
-    enricher=HeadingEnricher(),
+    enrich=[HeadingEnricher()],
+    refine=[CrossEncoderReranker(model="BAAI/bge-reranker-v2-m3")],
     chunker=MarkdownChunker(),
 )
 rag.index([Source.from_path(p) for p in my_files])     # needs [docling] for PDFs
@@ -522,28 +587,22 @@ and `ANTHROPIC_API_KEY` in the environment.
 
 ### 8.3 Hybrid retrieval + reranking, wired by hand
 
-When you want dense + BM25 fusion (RagPipeline covers the dense case), compose
-the pieces:
+When you want to control the retrieval/refinement wiring directly (and enumerate
+strategies over one index, the way the tuner will), compose the pieces:
 
 ```python
 from rag_toolkit import (
-    IndexingPipeline, QueryPipeline, HashingEmbedder, MemoryVectorStore, BM25Index,
-    DenseRetriever, Bm25Retriever, HybridRetriever, KeywordReranker,
+    IndexingPipeline, QueryPipeline, ChunkIndex, HashingEmbedder,
+    MemoryVectorStore, BM25Index, HybridRetriever, KeywordRefiner,
     AnthropicGenerator, Query, Source,
 )
 
-emb, store, index = HashingEmbedder(), MemoryVectorStore(), BM25Index()
+# One ChunkIndex owns both representations; index ONCE into it as a sink.
+index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder(), lexical=BM25Index())
+for _ in IndexingPipeline(sinks=[index]).index(Source.from_path("report.md")):
+    pass
 
-# Index once, into both a vector store and a lexical index.
-for chunk in IndexingPipeline().index(Source.from_path("report.md")):
-    store.upsert([chunk], emb.embed_texts([chunk.text]))
-    index.add([chunk])
-
-retriever = HybridRetriever(retrievers=[
-    DenseRetriever(embedder=emb, store=store),
-    Bm25Retriever(index=index),
-])
-qp = QueryPipeline(retriever=retriever, reranker=KeywordReranker(), fetch_k=50)
+qp = QueryPipeline(HybridRetriever(index), refine=[KeywordRefiner()], fetch_k=50)
 
 query = Query(text="what was revenue?")
 context = qp.query(query, k=8)
@@ -596,7 +655,7 @@ rag.index(Source.from_bytes(b"# T\nbody\n", name="t.md"))
 rag.ask("body?", k=1)
 for e in events:
     print(f"{e.stage:12} {e.duration_ms:6.1f}ms {e.detail}")
-# parse / chunk / retrieve / rerank ...
+# parse / chunk / retrieve / refine ...
 ```
 
 ---
@@ -649,21 +708,22 @@ rag = RagPipeline(embedder=MyEmbedder(dimensions=384))
 emb = registry.create("embedder", "my-embedder", dimensions=384)
 ```
 
-### 9.2 A custom reranker
+### 9.2 A custom refiner
 
 ```python
-from rag_toolkit import registry, Reranker, Query, ScoredChunk
+from rag_toolkit import registry, Refiner, Query, ScoredChunk
 
 @registry.register
-class LengthReranker(Reranker):
+class LengthRefiner(Refiner):
     """Toy: prefer longer passages."""
     name = "length"
     version = "0.1.0"
 
-    def rerank(self, query: Query, candidates: list[ScoredChunk],
-               top_k: int) -> list[ScoredChunk]:
-        ranked = sorted(candidates, key=lambda sc: len(sc.chunk.text), reverse=True)
-        return ranked[:top_k]        # return only chunks from `candidates`, highest first
+    def refine(self, query: Query, candidates: list[ScoredChunk],
+               k: int) -> list[ScoredChunk]:
+        # Return a score-ordered list drawn from `candidates`; the pipeline owns
+        # the final truncation to k, so a refiner needn't slice.
+        return sorted(candidates, key=lambda sc: len(sc.chunk.text), reverse=True)
 ```
 
 ### 9.3 A custom generator
@@ -894,22 +954,22 @@ you write a component, run the matching contract against it. In this repo they
 live in `tests/contract_checks.py`:
 
 ```python
-from tests.contract_checks import assert_embedder_contract, assert_reranker_contract
+from tests.contract_checks import assert_embedder_contract, assert_refiner_contract
 assert_embedder_contract(MyEmbedder(dimensions=384))
-assert_reranker_contract(LengthReranker())
+assert_refiner_contract(MyRefiner())
 ```
 
 Available: `assert_parser_contract`, `assert_chunker_contract`,
 `assert_enricher_contract`, `assert_embedder_contract`,
 `assert_vector_store_contract`, `assert_lexical_index_contract`,
-`assert_retriever_contract`, `assert_reranker_contract`,
+`assert_index_contract`, `assert_retriever_contract`, `assert_refiner_contract`,
 `assert_generator_contract`, `assert_blob_store_contract`.
 
 Guarantees they enforce, for example — an embedder returns one equal-width
-vector per input, `embed_texts([]) == []`, and is deterministic; a reranker
-returns ≤ `top_k` chunks drawn only from its candidates, highest score first; a
-vector store's `search` returns nearest-first with provenance intact and
-`upsert` is idempotent by `chunk.id`.
+vector per input, `embed_texts([]) == []`, and is deterministic; a refiner
+returns a score-ordered candidate list drawn from its input (the pipeline owns
+the final truncation to `k`); a vector store's `search(name, vector, k)` returns
+nearest-first with provenance intact and `upsert` is idempotent by `chunk.id`.
 
 Keep the default test run hermetic (no network, no keys); put real-vendor tests
 behind an integration marker and gate them on an env var, mirroring the built-in
@@ -935,10 +995,10 @@ rag = rk.RagPipeline()
 rag.index(Source.from_path("report.md"))
 ans = rag.ask("question?", k=5)                       # ans.text, ans.citations
 
-# Build any component by name
+# Build any stateless component by name (stateful aggregates are wired directly)
 emb   = registry.create("embedder", "hashing", dimensions=512)
-store = registry.create("store", "memory")
-rr    = registry.create("reranker", "keyword")
+store = registry.create("vector_store", "memory")
+ref   = registry.create("refiner", "keyword")
 registry.available("retriever")                       # discover what's registered
 ```
 
@@ -951,7 +1011,9 @@ registry.available("retriever")                       # names within one kind
 
 ---
 
-*This guide covers the implemented library (through v0.5: ingestion → chunking →
-enrichment → embedding → storage → retrieval → reranking → generation, plus the
-three pipelines). Evaluation and auto-tuning (v0.6–0.7) are on the roadmap; see
-`ARCHITECTURE.md` and `AGENTS.md` for the design rationale and what's next.*
+*This guide covers the implemented library (through v0.6, the DR-0001 v2
+restructure: ingestion → chunking → enrichment → embedding → the `ChunkIndex`
+aggregate over a multi-vector store → the retrieval composition axis → the
+refiner chain → generation, plus the three pipelines). Evaluation and
+auto-tuning (v0.7) are on the roadmap; see `ARCHITECTURE.md` and `AGENTS.md` for
+the design rationale and what's next.*

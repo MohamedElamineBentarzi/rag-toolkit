@@ -16,6 +16,9 @@ from .contracts import (
     ScoredChunk,
     Source,
     SourceFormat,
+    SparseVector,
+    VectorSpec,
+    VectorValue,
 )
 from .errors import (
     ComponentNotFoundError,
@@ -46,6 +49,9 @@ __all__ = [
     "ScoredChunk",
     "Citation",
     "Answer",
+    "SparseVector",
+    "VectorSpec",
+    "VectorValue",
     "RagToolkitError",
     "ComponentNotFoundError",
     "DuplicateComponentError",

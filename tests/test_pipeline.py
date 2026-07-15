@@ -16,7 +16,7 @@ def test_index_streams_chunks_with_provenance():
     src = text_source()
     chunks = list(IndexingPipeline().index(src))
     assert chunks, "pipeline produced no chunks"
-    assert all(c.doc_id == src.content_hash()[:16] for c in chunks)
+    assert all(c.doc_id == src.content_hash() for c in chunks)
     assert all(c.char_start is not None and c.page_start is not None for c in chunks)
     assert [c.index for c in chunks] == list(range(len(chunks)))
 

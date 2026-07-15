@@ -78,6 +78,13 @@ class LocalBlobStore(BlobStore):
     def exists(self, key: str) -> bool:
         return self._resolve(key).is_file()
 
+    def url(self, key: str, *, expires_seconds: int = 3600) -> str:
+        # A local file link never expires, so expires_seconds is ignored.
+        target = self._resolve(key)
+        if not target.is_file():
+            raise StorageError("No blob stored under key", key=key)
+        return target.as_uri()
+
     # -- internals -----------------------------------------------------------
 
     def _resolve(self, key: str) -> Path:

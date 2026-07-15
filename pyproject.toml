@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rag-toolkit"
-version = "0.1.0"
+version = "0.6.0"
 description = "Composable building blocks for production RAG pipelines, with an auto-tuning evaluation suite."
 readme = "README.md"
 requires-python = ">=3.10"

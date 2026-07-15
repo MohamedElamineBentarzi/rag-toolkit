@@ -22,7 +22,7 @@ The core has **zero dependencies**; vendor SDKs are optional extras.
 ### GPU acceleration
 
 Only the local-model components use a GPU — `SentenceTransformerEmbedder`,
-`BgeReranker`, and `DoclingParser`'s layout models. GPU-ness is a property of
+`CrossEncoderReranker`, and `DoclingParser`'s layout models. GPU-ness is a property of
 *how PyTorch is installed*, not of a toolkit extra: the CUDA wheels live on
 PyTorch's own index, not PyPI, so a pip extra can't pull them. What to do
 depends on your OS:
@@ -102,23 +102,36 @@ from rag_toolkit import RagPipeline, Source
 rag = RagPipeline()
 rag.index(Source.from_path("report.pdf"))          # parse → chunk → embed → store
 
-answer = rag.ask("What was Q3 revenue?", k=5)      # retrieve → rerank → generate
+answer = rag.ask("What was Q3 revenue?", k=5)      # retrieve → refine → generate
 print(answer.text)
 for c in answer.citations:                          # each resolves to doc + pages
     print(f"  [{c.marker}] {c.doc_id} p{c.page_start}-{c.page_end}")
 ```
 
-Swap in production components without changing the wiring:
+Swap in production components without changing the wiring. Backends live on a
+`ChunkIndex` (the aggregate that owns a corpus's searchable representations),
+created once and shared by the pipeline:
 
 ```python
 from rag_toolkit import (
-    RagPipeline, SentenceTransformerEmbedder, QdrantVectorStore, AnthropicGenerator,
+    RagPipeline, ChunkIndex, SentenceTransformerEmbedder, QdrantVectorStore,
+    BM25Index, AnthropicGenerator,
 )
 
 rag = RagPipeline(
-    embedder=SentenceTransformerEmbedder(),                 # bge-m3
-    store=QdrantVectorStore(url="http://localhost:6333"),
+    chunk_index=ChunkIndex(
+        store=QdrantVectorStore(url="http://localhost:6333"),
+        dense=SentenceTransformerEmbedder(),                # bge-m3
+        lexical=BM25Index(),                                # ⇒ hybrid retrieval, derived
+    ),
     generator=AnthropicGenerator(),                         # claude-opus-4-8
+)
+
+# The 80% dense-only case has a convenience constructor:
+rag = RagPipeline.dense(
+    embedder=SentenceTransformerEmbedder(),
+    store=QdrantVectorStore(url="http://localhost:6333"),
+    generator=AnthropicGenerator(),
 )
 ```
 
@@ -170,27 +183,32 @@ same key).
 
 ## Embed and search
 
-Embed chunks and put them in a vector store to make them searchable. The
-`memory` store (pure Python) plus the `hashing` embedder give a fully local,
-dependency-free loop; swap in `sentence-transformers` + `qdrant` for production
-by changing two component names:
+A `ChunkIndex` owns a corpus's searchable representations: `add(chunks)` writes
+every one, `search(representation, TEXT, k)` encodes the query with the *same*
+encoder that encoded the corpus. The `memory` store + `hashing` embedder give a
+fully local, dependency-free loop; swap in `sentence-transformers` + `qdrant` for
+production by changing two component names:
 
 ```python
-import rag_toolkit as rk
-from rag_toolkit import HashingEmbedder, IndexingPipeline, MemoryVectorStore, Source
+from rag_toolkit import (ChunkIndex, HashingEmbedder, IndexingPipeline,
+                         MemoryVectorStore, Source)
 
-embedder = HashingEmbedder()          # or SentenceTransformerEmbedder() (bge-m3)
-store = MemoryVectorStore()           # or QdrantVectorStore(url="http://localhost:6333")
+index = ChunkIndex(
+    store=MemoryVectorStore(),         # or QdrantVectorStore(url="http://localhost:6333")
+    dense=HashingEmbedder(),           # or SentenceTransformerEmbedder() (bge-m3)
+)
 
-chunks = list(IndexingPipeline().index(Source.from_path("report.pdf")))
-store.upsert(chunks, embedder.embed_texts([c.text for c in chunks]))
+# Index once, streaming, with the index as a write sink:
+for _ in IndexingPipeline(sinks=[index]).index(Source.from_path("report.pdf")):
+    pass
 
-for hit in store.search(embedder.embed_query("What was Q3 revenue?"), k=5):
+for hit in index.search("dense", "What was Q3 revenue?", k=5):
     print(hit.score, hit.chunk.page_start, hit.chunk.text[:80])   # provenance intact
 ```
 
 `search` returns `ScoredChunk`s with the full chunk (text + page provenance)
-inline, so answering never has to touch the blob store.
+inline, so answering never has to touch the blob store. Add `lexical=BM25Index()`
+(or a `sparse=` encoder) and the index carries several representations at once.
 
 ## Persist raw files
 

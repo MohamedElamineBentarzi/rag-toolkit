@@ -1,10 +1,15 @@
 """RagPipeline: the whole loop end to end, zero dependencies."""
 from rag_toolkit.chunking.markdown import MarkdownChunker
 from rag_toolkit.core.contracts import Answer, Query, Source
+from rag_toolkit.core.errors import ConfigError
 from rag_toolkit.embedding.hashing import HashingEmbedder
 from rag_toolkit.generation.extractive import ExtractiveGenerator
+from rag_toolkit.indexing.chunk_index import ChunkIndex
 from rag_toolkit.pipeline import RagPipeline
-from rag_toolkit.storage.local import LocalBlobStore
+from rag_toolkit.retrieval.hybrid import HybridRetriever
+from rag_toolkit.retrieval.index_retriever import IndexRetriever
+from rag_toolkit.storage.bm25_index import BM25Index
+from rag_toolkit.storage.memory_store import MemoryVectorStore
 
 _CORPUS = "# France\nParis is the capital of France.\n\n# Fruit\nBananas are yellow.\n"
 
@@ -39,44 +44,52 @@ def test_ask_before_indexing_is_graceful():
     assert answer.citations == []  # nothing indexed ⇒ no sources
 
 
-def test_index_populates_the_store():
+def test_index_populates_the_chunk_index():
     rag = RagPipeline(chunker=MarkdownChunker())
     rag.index(source())
-    # Two headings ⇒ two chunks upserted into the (default memory) store.
-    hits = rag.store.search(rag.embedder.embed_query("fruit"), k=10)
+    # Two headings ⇒ two chunks written into the (default) ChunkIndex.
+    hits = rag.chunk_index.search("dense", "fruit", k=10)
     assert len(hits) == 2
 
 
-class _CountingEmbedder(HashingEmbedder):
-    """HashingEmbedder that records how many texts it actually embedded."""
-    name = "counting-emb"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.embedded = 0
-
-    def embed_texts(self, texts):
-        self.embedded += len(texts)
-        return super().embed_texts(texts)
+def test_default_retriever_is_derived_from_one_representation():
+    assert isinstance(RagPipeline().retriever, IndexRetriever)
 
 
-def test_embedding_cache_skips_recompute_across_runs(tmp_path):
-    cache = LocalBlobStore(root=str(tmp_path))
+def test_default_retriever_is_hybrid_for_multi_representation():
+    index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder(),
+                       lexical=BM25Index())
+    rag = RagPipeline(chunk_index=index)
+    assert isinstance(rag.retriever, HybridRetriever)
 
-    first = _CountingEmbedder()
-    RagPipeline(embedder=first, chunker=MarkdownChunker(),
-                embedding_cache=cache).index(source())
-    assert first.embedded == 2               # two heading sections, both embedded
 
-    # A fresh embedder of the same config shares the cache (keyed by fingerprint).
-    second = _CountingEmbedder()
-    RagPipeline(embedder=second, chunker=MarkdownChunker(),
-                embedding_cache=cache).index(source())
-    assert second.embedded == 0              # every chunk served from cache
+def test_dense_convenience_constructor():
+    rag = RagPipeline.dense(embedder=HashingEmbedder(), chunker=MarkdownChunker())
+    rag.index(source())
+    assert "Paris" in rag.ask("capital of France", k=1).text
+
+
+def test_wiring_guard_rejects_a_retriever_over_a_different_index():
+    a = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder())
+    b = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder())
+    # A retriever wired to `b` must not be paired with chunk_index `a`.
+    try:
+        RagPipeline(chunk_index=a, retriever=IndexRetriever(b))
+        assert False, "expected a wiring guard explosion"
+    except ConfigError:
+        pass
+
+
+def test_hybrid_end_to_end():
+    index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder(),
+                       lexical=BM25Index())
+    rag = RagPipeline(chunk_index=index, chunker=MarkdownChunker())
+    rag.index(source())
+    assert "Paris" in rag.ask("capital of France", k=1).text
 
 
 def test_components_are_swappable():
-    # A custom generator is used verbatim by the facade.
+    # A custom generator is used verbatim by the composition root.
     class _Fixed(ExtractiveGenerator):
         name = "fixed-gen"
 

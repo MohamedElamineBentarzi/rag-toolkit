@@ -31,7 +31,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
-from typing import BinaryIO, Iterable, Optional
+from typing import BinaryIO, Iterable, Literal, Optional, Union
 
 __all__ = [
     "SourceFormat",
@@ -44,6 +44,9 @@ __all__ = [
     "ScoredChunk",
     "Citation",
     "Answer",
+    "SparseVector",
+    "VectorValue",
+    "VectorSpec",
 ]
 
 
@@ -295,6 +298,10 @@ class Citation:
     UI can link a claim to its source. The rest is provenance carried straight
     through from the chunk — this is the end of the chain that lets an answer
     say "from pages 4–5 of report.pdf".
+
+    The human-readable source name (and a download link) is resolved from
+    `doc_id`, not carried per-chunk: `DocumentCatalog.get(doc_id)` /
+    `download_url(doc_id)` read the doc manifest in the blob store.
     """
 
     marker: int
@@ -319,15 +326,64 @@ class Answer:
     metadata: dict = field(default_factory=dict)
 
 
+# -- representation contracts (DR-0001 v2) ---------------------------------
+#
+# A Chunk is a *fact*; how it is made searchable is an *interpretation* under a
+# particular encoder. Those interpretations are named, typed, keyed data that
+# live in the store and the embedding cache — never on the Chunk itself. These
+# three shapes are the vocabulary the multi-representation ChunkIndex and the
+# multi-vector VectorStore speak.
+
+
+@dataclass(frozen=True)
+class SparseVector:
+    """A sparse embedding: parallel term-index / weight arrays.
+
+    The static (SPLADE-style) counterpart of a dense `list[float]`. Frozen and
+    tuple-backed so it is hashable and safe to pass across cached stages.
+    `indices` and `values` are parallel and equal length.
+    """
+
+    indices: tuple[int, ...]
+    values: tuple[float, ...]
+
+
+#: The value stored under one named vector space for one chunk: a dense vector
+#: (`list[float]`) or a `SparseVector`. Which one is legal is fixed by the
+#: matching `VectorSpec.kind`.
+VectorValue = Union[list[float], SparseVector]
+
+
+@dataclass(frozen=True)
+class VectorSpec:
+    """The declared schema of one named vector space inside a `VectorStore`.
+
+    A store is a *named, typed* multi-vector index: each `ChunkIndex`
+    representation ("dense", "splade", …) maps to one spec. `dimensions` and
+    `distance` describe dense spaces only; sparse spaces ignore them.
+    """
+
+    name: str
+    kind: Literal["dense", "sparse"]
+    dimensions: Optional[int] = None      # dense only
+    distance: str = "cosine"              # dense only
+
+
 def _stable_document_id(source: Source) -> str:
     """Deterministic id: same content ⇒ same id ⇒ idempotent re-indexing.
+
+    The id is the FULL sha256 content hash (not a prefix): a truncated id trades
+    a silent-collision risk — two documents sharing a `doc_id` would overwrite
+    each other's chunks in the store — for shorter ids, a bad bargain in a
+    general-purpose library. Because it equals the content hash, it is also the
+    address of the raw blob (`raw/{doc_id}/original{ext}`).
 
     Falls back to a uri hash (or uuid) when content isn't hashable, so the
     happy path stays deterministic without making the API brittle.
     """
     try:
-        return source.content_hash()[:16]
+        return source.content_hash()
     except OSError:
         if source.uri and source.uri != "<memory>":
-            return hashlib.sha256(source.uri.encode()).hexdigest()[:16]
-        return uuid.uuid4().hex[:16]
+            return hashlib.sha256(source.uri.encode()).hexdigest()
+        return uuid.uuid4().hex

@@ -109,6 +109,21 @@ class MinioBlobStore(BlobStore):
                 f"MinioBlobStore failed to stat blob: {exc}", key=key
             ) from exc
 
+    def url(self, key: str, *, expires_seconds: int = 3600) -> str:
+        from datetime import timedelta
+
+        client = self._get_client()
+        try:
+            return client.presigned_get_object(
+                bucket_name=self.config.bucket,
+                object_name=key,
+                expires=timedelta(seconds=expires_seconds),
+            )
+        except Exception as exc:  # noqa: BLE001 - normalize vendor errors
+            raise StorageError(
+                f"MinioBlobStore could not presign a URL: {exc}", key=key
+            ) from exc
+
     # -- internals -----------------------------------------------------------
 
     def _credentials(self) -> tuple[Optional[str], Optional[str]]:

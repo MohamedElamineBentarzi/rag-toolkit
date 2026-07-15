@@ -15,9 +15,15 @@ Contract notes:
   chunker's slice-equality invariant no longer applies past this stage — but
   page provenance (`page_start`/`page_end`) is preserved so citations still
   resolve. Purely synthetic chunks (summaries, Q/A) may carry `None` pages.
+- **Synthetic-chunk identity rule (§8.2).** An enricher that *adds* chunks (not
+  just augments existing ones) MUST give each a parent-derived id
+  (`f"{parent.id}#aug{n}"`), set `metadata["synthetic"] = True`, and carry the
+  parent's `index`. This keeps ids collision-free and lets index-based lookups
+  (`NeighborExpander`, get-by-index) exclude synthetic chunks from a document's
+  contiguous text — a synthetic summary is not a neighbor.
 
-`NoOpEnricher` is the default (Null Object): the indexing pipeline always calls
-`enrich(...)` and never branches on whether enrichment is configured.
+Enrichers compose as a chain on the write path (`enrich=[...]`); the *empty*
+chain is the null object, so there is no `NoOpEnricher` (DR-0001 v2, D6).
 """
 
 from __future__ import annotations

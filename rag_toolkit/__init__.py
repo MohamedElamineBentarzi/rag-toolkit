@@ -38,21 +38,32 @@ from .core import (
     ScoredChunk,
     Source,
     SourceFormat,
+    SparseVector,
     StorageError,
+    VectorSpec,
+    VectorValue,
     registry,
 )
-from .embedding import Embedder, HashingEmbedder, SentenceTransformerEmbedder
+from .embedding import (
+    CachingEmbedder,
+    Embedder,
+    HashingEmbedder,
+    SentenceTransformerEmbedder,
+    SparseEncoder,
+)
+from .indexing import ChunkIndex, ChunkSink, DocumentCatalog, DocumentRef
 from .enrichment import (
     ContextualEnricher,
     Enricher,
     HeadingEnricher,
-    NoOpEnricher,
 )
 from .generation import AnthropicGenerator, ExtractiveGenerator, Generator
 from .retrieval import (
-    Bm25Retriever,
-    DenseRetriever,
+    FusionRetriever,
     HybridRetriever,
+    HydeRetriever,
+    IndexRetriever,
+    MultiQueryRetriever,
     Retriever,
 )
 from .ingestion import (
@@ -67,8 +78,14 @@ from .ingestion import (
     detect_format,
 )
 from .chunking import Chunker, FixedChunker, MarkdownChunker
+from .refinement import (
+    CrossEncoderReranker,
+    KeywordRefiner,
+    NeighborExpander,
+    Refiner,
+    ScoreThreshold,
+)
 from .pipeline import IndexingPipeline, QueryPipeline, RagPipeline, TraceEvent
-from .reranking import BgeReranker, KeywordReranker, NoOpReranker, Reranker
 from .storage import (
     BM25Index,
     BlobStore,
@@ -80,7 +97,7 @@ from .storage import (
     VectorStore,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "ingest",
@@ -109,10 +126,18 @@ __all__ = [
     "FixedChunker",
     "MarkdownChunker",
     "Embedder",
+    "SparseEncoder",
+    "CachingEmbedder",
     "HashingEmbedder",
     "SentenceTransformerEmbedder",
+    "SparseVector",
+    "VectorSpec",
+    "VectorValue",
+    "ChunkIndex",
+    "ChunkSink",
+    "DocumentCatalog",
+    "DocumentRef",
     "Enricher",
-    "NoOpEnricher",
     "HeadingEnricher",
     "ContextualEnricher",
     "BlobStore",
@@ -124,13 +149,16 @@ __all__ = [
     "LexicalIndex",
     "BM25Index",
     "Retriever",
-    "DenseRetriever",
-    "Bm25Retriever",
+    "IndexRetriever",
+    "FusionRetriever",
     "HybridRetriever",
-    "Reranker",
-    "NoOpReranker",
-    "KeywordReranker",
-    "BgeReranker",
+    "MultiQueryRetriever",
+    "HydeRetriever",
+    "Refiner",
+    "CrossEncoderReranker",
+    "KeywordRefiner",
+    "NeighborExpander",
+    "ScoreThreshold",
     "Generator",
     "ExtractiveGenerator",
     "AnthropicGenerator",

@@ -7,11 +7,15 @@ the real-model Adapter behind an optional extra.
 """
 
 from .base import Embedder
+from .caching import CachingEmbedder
 from .hashing import HashingEmbedder
 from .sentence_transformer import SentenceTransformerEmbedder
+from .sparse import SparseEncoder
 
 __all__ = [
     "Embedder",
+    "SparseEncoder",
+    "CachingEmbedder",
     "HashingEmbedder",
     "SentenceTransformerEmbedder",
 ]

@@ -19,13 +19,14 @@ from rag_toolkit.core.contracts import (
     Query,
     ScoredChunk,
     Source,
+    VectorSpec,
 )
-from rag_toolkit.core.errors import StorageError
+from rag_toolkit.core.errors import RagToolkitError, StorageError
 from rag_toolkit.embedding.base import Embedder
 from rag_toolkit.enrichment.base import Enricher
 from rag_toolkit.generation.base import Generator
 from rag_toolkit.ingestion.parsers.base import Parser
-from rag_toolkit.reranking.base import Reranker
+from rag_toolkit.refinement.base import Refiner
 from rag_toolkit.retrieval.base import Retriever
 from rag_toolkit.storage.base import BlobStore
 from rag_toolkit.storage.lexical_index import LexicalIndex
@@ -135,12 +136,23 @@ def assert_enricher_contract(
 
     Passed the document's own chunks; enrichers may augment text or add
     synthetic chunks, but must keep the doc link and yield real Chunks."""
+    input_ids = {c.id for c in chunks}
     out = list(enricher.enrich(iter(chunks), document))
     assert out, "enricher dropped all chunks for a non-empty document"
     for c in out:
         assert isinstance(c, Chunk)
         assert c.doc_id == document.id  # the doc link survives enrichment
         assert c.text  # never blanks a chunk
+
+        # Synthetic-chunk identity rule (§8.2): any *added* chunk (an id the
+        # chunker never produced) must be a parent-derived, index-carrying,
+        # explicitly-synthetic chunk — so neighbor/index lookups can exclude it.
+        if c.id not in input_ids:
+            assert c.metadata.get("synthetic") is True, (
+                "added chunks must be marked metadata['synthetic']=True"
+            )
+            assert "#" in c.id, "synthetic ids must be parent-derived (parent#...)"
+            assert c.index is not None, "synthetic chunks must carry the parent index"
 
     # Deterministic identity (the component, not necessarily its LLM output).
     assert enricher.fingerprint() == enricher.fingerprint()
@@ -174,7 +186,11 @@ def assert_embedder_contract(embedder: Embedder) -> None:
 
 
 def assert_vector_store_contract(store: VectorStore, dimensions: int = 8) -> None:
-    """Every VectorStore (memory, qdrant, your own) must behave like this."""
+    """Every VectorStore (memory, qdrant, your own) must behave like this.
+
+    v2: named+typed multi-vector, eager create-or-validate schema, `fetch`
+    without a query vector, membership filters, and partial `update_vectors`.
+    """
     def unit(i: int) -> list[float]:
         v = [0.0] * dimensions
         v[i] = 1.0
@@ -185,15 +201,24 @@ def assert_vector_store_contract(store: VectorStore, dimensions: int = 8) -> Non
               char_start=i, char_end=i + 1, page_start=1, page_end=1)
         for i in range(3)
     ]
-    vectors = [unit(0), unit(1), unit(2)]
+    dense = [unit(0), unit(1), unit(2)]
+
+    # 0. Schema is declared up front (create-or-validate).
+    spec = VectorSpec(name="dense", kind="dense", dimensions=dimensions)
+    store.ensure_schema([spec])
+    # Re-declaring the same schema validates and is a no-op (not an error).
+    store.ensure_schema([spec])
+    # A conflicting redeclaration must fail loudly, never coerce.
+    with pytest.raises(RagToolkitError):
+        store.ensure_schema([VectorSpec("dense", "dense", dimensions + 1)])
 
     # 1. Empty store: search yields nothing (not an error).
-    assert store.search(unit(0), k=5) == []
+    assert store.search("dense", unit(0), k=5) == []
 
     # 2. After upsert, the exact match ranks first, scores descend, and the
     #    reconstructed chunk keeps its provenance.
-    store.upsert(chunks, vectors)
-    results = store.search(unit(0), k=3)
+    store.upsert(chunks, {"dense": dense})
+    results = store.search("dense", unit(0), k=3)
     assert results and isinstance(results[0], ScoredChunk)
     assert results[0].chunk.id == "d:0"
     assert [r.score for r in results] == sorted(
@@ -204,17 +229,22 @@ def assert_vector_store_contract(store: VectorStore, dimensions: int = 8) -> Non
     assert results[0].chunk.char_start == 0
 
     # 3. k is respected.
-    assert len(store.search(unit(0), k=2)) == 2
+    assert len(store.search("dense", unit(0), k=2)) == 2
 
     # 4. Re-upserting the same ids overwrites, never duplicates.
-    store.upsert(chunks, vectors)
-    assert len(store.search(unit(0), k=10)) == 3
+    store.upsert(chunks, {"dense": dense})
+    assert len(store.search("dense", unit(0), k=10)) == 3
 
-    # 5. Payload-equality filters narrow the result set.
-    filtered = store.search(unit(1), k=10, filters={"index": 1})
+    # 5. Equality filters narrow the result set.
+    filtered = store.search("dense", unit(1), k=10, filters={"index": 1})
     assert filtered and all(r.chunk.index == 1 for r in filtered)
 
-    # 6. Identity is deterministic.
+    # 6. fetch() is point retrieval without a query vector; list filter values
+    #    mean membership.
+    got = store.fetch({"doc_id": "d", "index": [0, 2]}, limit=10)
+    assert {c.id for c in got} == {"d:0", "d:2"}
+
+    # 7. Identity is deterministic.
     assert store.fingerprint() == store.fingerprint()
 
 
@@ -265,6 +295,51 @@ def assert_lexical_index_contract(index: LexicalIndex) -> None:
     assert index.fingerprint() == index.fingerprint()
 
 
+def assert_index_contract(index) -> None:
+    """Every ChunkIndex must behave like this, over whatever representations it
+    declares. Hermetic on memory store + HashingEmbedder + Bm25Index."""
+    reps = index.representations()
+    assert reps, "a ChunkIndex must declare at least one representation"
+
+    chunks = _corpus()
+
+    # 1. Empty index: every representation searches to nothing (not an error).
+    for rep in reps:
+        assert index.search(rep, "quick brown fox", k=5) == []
+
+    index.add(chunks)
+
+    # 2. Each representation retrieves, ranks highest-first, and reconstructs
+    #    chunks with intact provenance.
+    for rep in reps:
+        results = index.search(rep, "quick brown fox", k=3)
+        assert results and isinstance(results[0], ScoredChunk)
+        assert [r.score for r in results] == sorted(
+            (r.score for r in results), reverse=True
+        )
+        assert results[0].chunk.page_start == 1
+        assert results[0].chunk.id == "d:0"  # the overlapping doc wins
+
+    # 3. fetch() reads the vector store's payloads (list filter values mean
+    #    membership). A lexical-only index has no stored vectors, so fetch is
+    #    legitimately empty there; when it returns anything the membership
+    #    filter must be honored exactly.
+    got = index.fetch({"doc_id": "d", "index": [0, 2]}, limit=10)
+    assert all(c.id in {"d:0", "d:2"} for c in got)
+
+    # 4. add is idempotent by chunk.id (re-adding never duplicates).
+    index.add(chunks)
+    for rep in reps:
+        assert len(index.search(rep, "quick", k=10)) <= len(chunks)
+
+    # 5. Unknown representation fails loudly.
+    with pytest.raises(RagToolkitError):
+        index.search("no-such-representation", "quick", k=1)
+
+    # 6. Deterministic identity.
+    assert index.fingerprint() == index.fingerprint()
+
+
 def assert_retriever_contract(
     retriever: Retriever, query: Query, expected_top_id: str
 ) -> None:
@@ -289,32 +364,34 @@ def assert_retriever_contract(
     assert retriever.fingerprint() == retriever.fingerprint()
 
 
-def assert_reranker_contract(reranker: Reranker) -> None:
-    """Every Reranker (noop, cross-encoder, your own) must behave like this."""
+def assert_refiner_contract(refiner: Refiner) -> None:
+    """Every Refiner (keyword, score-threshold, neighbor-expander, cross-encoder,
+    your own) must behave like this. A refiner is one uniform post-retrieval
+    stage: `refine(query, candidates, k) -> candidates`."""
     query = Query(text="quick brown fox")
     # Candidates arrive already ranked from a retriever (scores descending).
     candidates = [
         ScoredChunk(
             chunk=Chunk(id=f"d:{i}", doc_id="d", text=t, index=i,
                         char_start=i, char_end=i + 1, page_start=1, page_end=1),
-            score=1.0 - i * 0.1, retriever_name="dense",
+            score=1.0 - i * 0.1, retriever_name="index",
         )
         for i, t in enumerate(["quick brown fox", "lazy dog", "unrelated text"])
     ]
-    candidate_ids = {c.chunk.id for c in candidates}
 
-    reranked = reranker.rerank(query, candidates, top_k=2)
-    # 1. Never more than top_k; only chunks drawn from the candidates.
-    assert len(reranked) <= 2
-    assert all(r.chunk.id in candidate_ids for r in reranked)
-    # 2. Output is ranked highest-first.
-    assert [r.score for r in reranked] == sorted(
-        (r.score for r in reranked), reverse=True
+    refined = refiner.refine(query, list(candidates), k=2)
+    # 1. Output is a list of ScoredChunks (may be more or fewer than k — the
+    #    pipeline enforces the final truncation, not the refiner).
+    assert isinstance(refined, list)
+    assert all(isinstance(r, ScoredChunk) for r in refined)
+    # 2. Whatever it returns is ordered highest-score-first.
+    assert [r.score for r in refined] == sorted(
+        (r.score for r in refined), reverse=True
     )
     # 3. Empty candidates ⇒ empty result (not an error).
-    assert reranker.rerank(query, [], top_k=5) == []
+    assert refiner.refine(query, [], k=5) == []
     # 4. Deterministic identity.
-    assert reranker.fingerprint() == reranker.fingerprint()
+    assert refiner.fingerprint() == refiner.fingerprint()
 
 
 def assert_generator_contract(
