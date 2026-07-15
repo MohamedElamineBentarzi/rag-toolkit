@@ -1,0 +1,47 @@
+name: Release
+
+# Publishes to PyPI when a version tag is pushed:
+#   git tag -a v0.7.0 -m "..." && git push origin v0.7.0
+#
+# Authentication is PyPI Trusted Publishing (OIDC) — there is NO API token in
+# this repo. Before the first release, configure the pending publisher on PyPI:
+#   PyPI -> the rag-blocks project -> Settings -> Publishing -> add a GitHub
+#   publisher: owner=MohamedElamineBentarzi, repo=rag-blocks,
+#   workflow=release.yml, environment=pypi.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+      - name: Check metadata
+        run: python -m twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # OIDC token for Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
