@@ -1,4 +1,4 @@
-# rag-toolkit
+# rag-blocks
 
 Composable building blocks for production RAG pipelines — every stage is a
 swappable component, every pipeline is a serializable config, and an
@@ -12,9 +12,9 @@ and streaming that keeps memory flat on 2 000-page PDFs.
 ## Install
 
 ```bash
-pip install "rag-toolkit[docling]"           # local parsing (default route)
-pip install "rag-toolkit[docling,mistral]"   # + Mistral OCR
-pip install "rag-toolkit[minio]"             # + MinIO / S3-compatible storage
+pip install "rag-blocks[docling]"           # local parsing (default route)
+pip install "rag-blocks[docling,mistral]"   # + Mistral OCR
+pip install "rag-blocks[minio]"             # + MinIO / S3-compatible storage
 ```
 
 The core has **zero dependencies**; vendor SDKs are optional extras.
@@ -29,12 +29,12 @@ depends on your OS:
 
 ```bash
 # Linux (NVIDIA): CUDA torch already comes from PyPI — nothing special.
-pip install "rag-toolkit[sentence-transformers]"
+pip install "rag-blocks[sentence-transformers]"
 
 # Windows / macOS: PyPI's torch is CPU-only. Install a CUDA torch FIRST,
 # then the extras (pip leaves the already-satisfied torch alone):
 pip install torch --index-url https://download.pytorch.org/whl/cu126   # match your CUDA
-pip install "rag-toolkit[sentence-transformers]"
+pip install "rag-blocks[sentence-transformers]"
 ```
 
 Verify: `python -c "import torch; print(torch.cuda.is_available())"` → `True`.
@@ -52,7 +52,7 @@ and misleading on Windows/macOS (pip extras can't select PyTorch's CUDA index).
 ## Quick start
 
 ```python
-import rag_toolkit as rk
+import rag_blocks as rk
 
 # One call: any file → markdown Document with page provenance
 doc = rk.ingest("report.pdf")
@@ -72,8 +72,8 @@ for page in parser.iter_pages(rk.Source.from_path("huge.pdf")):
 
 ```python
 from dataclasses import dataclass
-from rag_toolkit import registry
-from rag_toolkit.ingestion.ocr.base import OcrEngine, OcrResult, PageImage
+from rag_blocks import registry
+from rag_blocks.ingestion.ocr.base import OcrEngine, OcrResult, PageImage
 
 @registry.register
 class MyOcrEngine(OcrEngine):
@@ -97,7 +97,7 @@ are the zero-dependency stack (hashing embedder, in-memory store, extractive
 generator), so this runs with no extras and no API key:
 
 ```python
-from rag_toolkit import RagPipeline, Source
+from rag_blocks import RagPipeline, Source
 
 rag = RagPipeline()
 rag.index(Source.from_path("report.pdf"))          # parse → chunk → embed → store
@@ -113,7 +113,7 @@ Swap in production components without changing the wiring. Backends live on a
 created once and shared by the pipeline:
 
 ```python
-from rag_toolkit import (
+from rag_blocks import (
     RagPipeline, ChunkIndex, SentenceTransformerEmbedder, QdrantVectorStore,
     BM25Index, AnthropicGenerator,
 )
@@ -143,8 +143,8 @@ contiguous indexing, and page provenance — so every chunk can still answer
 "which pages did I come from":
 
 ```python
-import rag_toolkit as rk
-from rag_toolkit import FixedChunker, MarkdownChunker
+import rag_blocks as rk
+from rag_blocks import FixedChunker, MarkdownChunker
 
 doc = rk.ingest("report.pdf")
 
@@ -166,7 +166,7 @@ when you hand it a blob store, captures the durable truth on the way (raw bytes
 components; the pipeline is a dumb for-loop with a tracing hook:
 
 ```python
-from rag_toolkit import IndexingPipeline, LocalBlobStore, Source
+from rag_blocks import IndexingPipeline, LocalBlobStore, Source
 
 pipeline = IndexingPipeline(
     blob_store=LocalBlobStore(root="./.rag_cache/blobs"),  # optional truth store
@@ -190,7 +190,7 @@ fully local, dependency-free loop; swap in `sentence-transformers` + `qdrant` fo
 production by changing two component names:
 
 ```python
-from rag_toolkit import (ChunkIndex, HashingEmbedder, IndexingPipeline,
+from rag_blocks import (ChunkIndex, HashingEmbedder, IndexingPipeline,
                          MemoryVectorStore, Source)
 
 index = ChunkIndex(
@@ -217,14 +217,14 @@ the parse cache next). Same tiny interface on disk or on any S3-compatible
 backend — swap by config, no other code changes:
 
 ```python
-from rag_toolkit import LocalBlobStore, MinioBlobStore, Source
+from rag_blocks import LocalBlobStore, MinioBlobStore, Source
 
 # On disk (zero-dep default, atomic writes)
 store = LocalBlobStore(root="./.rag_cache/blobs")
 
 # ...or any S3-compatible backend (MinIO, AWS S3, R2, B2) — needs [minio].
 # Credentials: config wins, else MINIO_ACCESS_KEY / MINIO_SECRET_KEY.
-store = MinioBlobStore(endpoint="localhost:9000", bucket="rag-toolkit")
+store = MinioBlobStore(endpoint="localhost:9000", bucket="rag-blocks")
 
 src = Source.from_path("report.pdf")
 key = f"raw/{src.content_hash()}/original.pdf"   # content-addressed ⇒ dedup free
@@ -236,11 +236,14 @@ assert store.get(key)[:5] == b"%PDF-"
 The store treats keys as opaque strings — the content-addressed layout lives in
 your pipeline, so the two implementations stay perfectly interchangeable.
 
-## Design
+## Documentation
 
-Read [ARCHITECTURE.md](ARCHITECTURE.md) for the full pipeline map, the data
-contracts, the pattern-by-pattern rationale, and the design of the evaluation
-and auto-tuning suite.
+- **[The Complete Guide](docs/guide/README.md)** — the in-depth, part-by-part
+  guide: how to use every component *and* how the code behind it works.
+- **[One-page reference](docs/GUIDE.md)** — the condensed cheat sheet.
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — the full pipeline map, the data
+  contracts, the pattern-by-pattern rationale, and the design of the evaluation
+  and auto-tuning suite.
 
 ## Development
 
@@ -248,7 +251,7 @@ and auto-tuning suite.
 pip install -e ".[dev]"
 pytest                      # fast, hermetic suite — no vendor deps needed
 pytest -m integration       # opt-in: real docling/OCR runs
-ruff check . && mypy rag_toolkit
+ruff check . && mypy rag_blocks
 ```
 
 Tests mirror the package layout. `tests/contract_checks.py` holds the
