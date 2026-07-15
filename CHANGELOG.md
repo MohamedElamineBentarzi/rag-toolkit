@@ -1,9 +1,52 @@
 # Changelog
 
-All notable changes to rag-blocks are documented here. Pre-1.0, breaking
-changes are expected between minor versions.
+All notable changes to rag-blocks are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/); this project uses
+[Semantic Versioning](https://semver.org/). Pre-1.0, breaking changes are
+expected between minor versions.
 
-## [0.6.0] — DR-0001 v2: ChunkIndex, composition algebra, multi-representation
+## [Unreleased]
+
+## [0.7.0] — 2026-07-16 — OSS readiness: rename, packaging, hardening
+
+First public release. The library is renamed and the repository is brought up to
+publishable standard; several correctness and hardening fixes land alongside.
+
+### Changed (breaking)
+- **Renamed `rag-toolkit` → `rag-blocks`** (distribution and import package
+  `rag_blocks`) to resolve a PyPI name collision. The root exception is now
+  `RagBlocksError`; the entry-point group is `rag_blocks.components`.
+- **`BM25Index.add` now upserts** existing ids (recomputes term counts/length)
+  instead of skipping them, matching `VectorStore.upsert`. Re-indexing a
+  persisted lexical namespace after a chunker/enricher change now stays
+  consistent with the vector side. `BM25Index.version` → `0.2.0`.
+
+### Added
+- `py.typed` marker (PEP 561) so consumers see the library's type hints.
+- Export-integrity test covering every package `__all__`.
+- `storage/filters.py`: single shared definition of metadata-filter semantics
+  (memory store, BM25, and Qdrant's native translation all reference it).
+- Community scaffolding: CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, issue/PR
+  templates, `examples/.env.example`, CITATION.cff; CI mypy enforcement, a
+  Windows lane, Python 3.13, a coverage gate, and release (Trusted Publishing)
+  + nightly integration workflows.
+
+### Fixed
+- `EnrichmentError` was listed in `__all__` but never imported, breaking
+  `from rag_blocks import *`.
+- Secret redaction now walks nested dicts (e.g. an `authorization` header inside
+  a config field), not just top-level field names.
+- Entry-point plugin load failures are now logged (warning) instead of silently
+  dropped.
+- `NeighborExpander` over-fetches so a synthetic chunk can't silently displace a
+  real neighbor.
+- `CachingEmbedder` raises if an inner embedder returns a mismatched vector count
+  instead of silently misaligning results.
+- `pack_context` counts the block joiners against its character budget.
+- Packaging metadata: PEP 639 license expression, full project URLs, correct
+  repository homepage, Python 3.13 classifier.
+
+## [0.6.0] — 2026-07-15 — DR-0001 v2: ChunkIndex, composition algebra, multi-representation
 
 The retrieval architecture is unified around one aggregate and two uniform
 chains (see `DR-0001-v2`). **This release is breaking** (pre-1.0).
@@ -72,3 +115,35 @@ chains (see `DR-0001-v2`). **This release is breaking** (pre-1.0).
   `refinement.CrossEncoderReranker`.
 - `NoOpEnricher` (the empty `enrich` chain is the null object).
 - `RagPipeline._flush/_embed/_EmbeddingCache` (superseded by `CachingEmbedder`).
+
+## [0.5.0] — 2026-07-14 — persistence, caching & generation
+
+- Persistence & caching: BM25 index persist/load through a `BlobStore`, an
+  embedding cache, and parse-cache read-through.
+- Generation stage: `Answer`, extractive generator, and `AnthropicGenerator`
+  with context packing, token budget, and citation markers resolved through
+  chunk→page provenance.
+
+## [0.4.0] — 2026-07-13 — retrieval & reranking
+
+- Retrieval: `dense` and `bm25` retrievers over `Query`/`LexicalIndex`, and a
+  `HybridRetriever` (RRF fusion Composite).
+- `QueryPipeline` with a reranker seam; keyword and BGE cross-encoder rerankers.
+
+## [0.3.0] — 2026-07-13 — embedding & storage
+
+- Embedding stage: hashing (dependency-free) and sentence-transformers embedders.
+- Storage: in-memory and Qdrant vector stores, `ScoredChunk`, and
+  `LocalBlobStore`/`MinioBlobStore` blob stores.
+
+## [0.2.0] — 2026-07-13 — chunking & enrichment
+
+- Chunking: `fixed` and `markdown-aware` chunkers with char-offset provenance.
+- Enrichment stage wired into the pipelines.
+- Thin `IndexingPipeline` (parse → chunk, with an optional truth store).
+
+## [0.1.0] — 2026-07-12 — core & ingestion
+
+- Core: contracts, component model, registry, errors — zero third-party deps.
+- Streaming ingestion: any file → clean markdown with page provenance, per-page
+  OCR routing (Mistral, Google Document AI, or a custom engine).

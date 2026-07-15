@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use rag-blocks in your research, please cite it as below."
+title: "rag-blocks: composable building blocks for production RAG pipelines"
+authors:
+  - family-names: Bentarzi
+    given-names: Mohamed Elamine
+repository-code: "https://github.com/MohamedElamineBentarzi/rag-blocks"
+url: "https://github.com/MohamedElamineBentarzi/rag-blocks"
+license: Apache-2.0
+type: software
+keywords:
+  - rag
+  - retrieval-augmented-generation
+  - information-retrieval
+  - llm
+  - nlp

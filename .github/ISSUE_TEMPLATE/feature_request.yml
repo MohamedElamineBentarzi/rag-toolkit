@@ -1,0 +1,40 @@
+name: Feature / component proposal
+description: Propose a new component or capability.
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Which stage / kind?
+      options:
+        - parser
+        - ocr_engine
+        - chunker
+        - embedder
+        - sparse_encoder
+        - vector_store
+        - lexical_index
+        - index
+        - retriever
+        - refiner
+        - enricher
+        - generator
+        - blob_store
+        - other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve?
+      description: The use case, and why the existing components don't cover it.
+    validations:
+      required: true
+  - type: textarea
+    id: sketch
+    attributes:
+      label: API sketch (optional)
+      description: How you'd want to construct/use it.
+      render: python
+    validations:
+      required: false

@@ -1,0 +1,48 @@
+name: Bug report
+description: Something behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected vs. what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest code snippet that triggers it. Hermetic if possible (default stack, no keys).
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: rag-blocks version
+      placeholder: "0.7.0  (python -c 'import rag_blocks; print(rag_blocks.__version__)')"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12"
+    validations:
+      required: true
+  - type: input
+    id: extras
+    attributes:
+      label: Extras installed
+      description: Which optional extras are involved (docling, qdrant, anthropic, ...).
+      placeholder: "rag-blocks[qdrant,sentence-transformers]"
+    validations:
+      required: false
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Traceback / logs
+      render: shell
+    validations:
+      required: false

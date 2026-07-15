@@ -98,7 +98,15 @@ from .storage import (
     VectorStore,
 )
 
-__version__ = "0.6.0"
+# Single source of truth is pyproject.toml; read it back from the installed
+# distribution metadata so the two can never drift.
+from importlib.metadata import PackageNotFoundError as _PkgNotFound
+from importlib.metadata import version as _dist_version
+
+try:
+    __version__ = _dist_version("rag-blocks")
+except _PkgNotFound:  # running from a source tree without an install
+    __version__ = "0.0.0+unknown"
 
 __all__ = [
     "ingest",
