@@ -30,6 +30,7 @@ from .core import (
     Component,
     Document,
     EmbeddingError,
+    EnrichmentError,
     GenerationError,
     Page,
     PageSpan,
