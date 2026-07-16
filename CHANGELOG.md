@@ -31,11 +31,18 @@ publishable standard; several correctness and hardening fixes land alongside.
   Windows lane, Python 3.13, a coverage gate, and release (Trusted Publishing)
   + nightly integration workflows.
 
+### Changed
+- `__version__` is now read from the installed distribution metadata
+  (`importlib.metadata`) instead of being hardcoded, so it can never drift from
+  `pyproject.toml`. Running from a source tree with no install reports
+  `0.0.0+unknown`.
+
 ### Fixed
 - `EnrichmentError` was listed in `__all__` but never imported, breaking
   `from rag_blocks import *`.
 - Secret redaction now walks nested dicts (e.g. an `authorization` header inside
-  a config field), not just top-level field names.
+  a config field), not just top-level field names, and `authorization` joins the
+  redacted-name markers.
 - Entry-point plugin load failures are now logged (warning) instead of silently
   dropped.
 - `NeighborExpander` over-fetches so a synthetic chunk can't silently displace a
