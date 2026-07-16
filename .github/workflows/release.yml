@@ -94,7 +94,7 @@ jobs:
     steps:
       # Deliberately NO checkout: this job never runs project code.
       # It downloads the already-built, already-checked artifact and ships it.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
