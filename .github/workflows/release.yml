@@ -76,7 +76,7 @@ jobs:
           python -m build
       - name: Check metadata
         run: python -m twine check --strict dist/*
-      - name: Sanity: built version matches the gate
+      - name: "Sanity: built version matches the gate"
         run: |
           ls dist/ | grep -F "${{ needs.gate.outputs.version }}"
       - uses: actions/upload-artifact@v4
