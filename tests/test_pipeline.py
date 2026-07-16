@@ -1,8 +1,11 @@
 """IndexingPipeline: thin wiring, tracing hook, and opt-in truth store."""
 import json
+import time
+from dataclasses import replace
 
 from rag_blocks.chunking.fixed import FixedChunker
 from rag_blocks.core.contracts import Source
+from rag_blocks.enrichment.base import Enricher
 from rag_blocks.ingestion.parsers.plaintext import PlainTextParser
 from rag_blocks.pipeline import IndexingPipeline, TraceEvent
 from rag_blocks.storage.local import LocalBlobStore
@@ -34,6 +37,82 @@ def test_tracing_hook_sees_parse_and_chunk_without_a_store():
     stages = [e.stage for e in events]
     assert stages == ["parse", "chunk"]
     assert all(e.duration_ms >= 0 for e in events)
+
+
+# -- per-enricher cost attribution ---------------------------------------
+
+
+class _SlowEnricher(Enricher):
+    """Burns a known amount of time per chunk, so attribution is checkable."""
+
+    name = "slow"
+
+    def __init__(self, delay_s, label):
+        super().__init__()
+        self.delay_s = delay_s
+        self.label = label
+
+    def enrich(self, chunks, document):
+        for chunk in chunks:
+            time.sleep(self.delay_s)
+            yield replace(chunk, text=f"[{self.label}] {chunk.text}")
+
+
+def test_each_enricher_gets_its_own_trace_event():
+    # The tuner treats "which enrichers" as a search dimension, so "the chain
+    # cost 4s" is useless — it must know which enricher spent it.
+    events: list[TraceEvent] = []
+    pipeline = IndexingPipeline(
+        enrich=[_SlowEnricher(0.001, "first"), _SlowEnricher(0.001, "second")],
+        trace=events.append,
+    )
+    list(pipeline.index(text_source()))
+
+    assert [e.stage for e in events] == ["parse", "chunk", "enrich", "enrich"]
+    assert [e.detail["enricher"] for e in events if e.stage == "enrich"] == [
+        "slow",
+        "slow",
+    ]
+
+
+def test_enrichment_cost_is_attributed_to_the_enricher_that_spent_it():
+    # The chain is lazy and its meters nest, so this is the invariant that
+    # could silently be wrong: a slow enricher's time must land on IT, not on
+    # the chunker and not on its neighbour.
+    events: list[TraceEvent] = []
+    pipeline = IndexingPipeline(
+        chunker=FixedChunker(chunk_chars=40, overlap_chars=0),
+        enrich=[_SlowEnricher(0.0, "fast"), _SlowEnricher(0.02, "slow")],
+        trace=events.append,
+    )
+    list(pipeline.index(text_source(body="alpha\n\nbeta\n\ngamma\n")))
+
+    enrich = [e for e in events if e.stage == "enrich"]
+    fast, slow = enrich[0], enrich[1]
+    assert slow.duration_ms > 15.0        # ~20ms of sleeps landed on it
+    assert fast.duration_ms < slow.duration_ms / 2   # ... and not on its neighbour
+
+
+def test_chunk_cost_excludes_enrichment_so_stages_never_double_count():
+    # `latency_ms` is summed per stage by CostCollector; if "chunk" still
+    # carried the whole chain, every enriched trial would be billed twice.
+    events: list[TraceEvent] = []
+    pipeline = IndexingPipeline(
+        enrich=[_SlowEnricher(0.02, "slow")], trace=events.append
+    )
+    list(pipeline.index(text_source()))
+
+    chunk = next(e for e in events if e.stage == "chunk")
+    slow = next(e for e in events if e.stage == "enrich")
+    assert chunk.duration_ms < slow.duration_ms
+
+
+def test_an_empty_enrich_chain_traces_exactly_as_before():
+    # The common case must be untouched: no enrichers, no enrich events, and
+    # "chunk" still means the whole (chunker-only) stream.
+    events: list[TraceEvent] = []
+    list(IndexingPipeline(enrich=[], trace=events.append).index(text_source()))
+    assert [e.stage for e in events] == ["parse", "chunk"]
 
 
 def test_blob_store_captures_raw_and_parsed_truth(tmp_path):

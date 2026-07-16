@@ -5,7 +5,7 @@ from rag_blocks.core.errors import ConfigError
 from rag_blocks.embedding.hashing import HashingEmbedder
 from rag_blocks.generation.extractive import ExtractiveGenerator
 from rag_blocks.indexing.chunk_index import ChunkIndex
-from rag_blocks.pipeline import RagPipeline
+from rag_blocks.pipeline import RagPipeline, TraceEvent
 from rag_blocks.retrieval.hybrid import HybridRetriever
 from rag_blocks.retrieval.index_retriever import IndexRetriever
 from rag_blocks.storage.bm25_index import BM25Index
@@ -16,6 +16,45 @@ _CORPUS = "# France\nParis is the capital of France.\n\n# Fruit\nBananas are yel
 
 def source():
     return Source.from_bytes(_CORPUS.encode(), name="facts.md")
+
+
+def test_ask_traces_generation_the_stage_where_the_money_goes():
+    # Generation was the one stage invisible to tracing — and the expensive
+    # one. Without this event a trial's cost is silently missing its bill.
+    events: list[TraceEvent] = []
+    rag = RagPipeline(chunker=MarkdownChunker(), trace=events.append)
+    rag.index(source())
+    rag.ask("What is the capital of France?", k=2)
+
+    generate = [e for e in events if e.stage == "generate"]
+    assert len(generate) == 1
+    assert generate[0].duration_ms >= 0
+    assert generate[0].detail["generator"] == "extractive"
+    assert generate[0].detail["context_chunks"] == 2
+    assert generate[0].source_uri == "What is the capital of France?"
+
+
+def test_the_generate_event_carries_usage_so_cost_needs_no_answer():
+    # ExtractiveGenerator is free and reports {} — an empty bill, not a
+    # missing one. A collector must be able to price a trial from the trace
+    # alone, without holding on to the Answer.
+    events: list[TraceEvent] = []
+    rag = RagPipeline(chunker=MarkdownChunker(), trace=events.append)
+    rag.index(source())
+    rag.ask("bananas", k=1)
+
+    generate = next(e for e in events if e.stage == "generate")
+    assert generate.detail["usage"] == {}
+
+
+def test_a_full_ask_traces_every_stage_of_the_read_path():
+    events: list[TraceEvent] = []
+    rag = RagPipeline(chunker=MarkdownChunker(), trace=events.append)
+    rag.index(source())
+    events.clear()  # drop the write path
+    rag.ask("bananas", k=1)
+
+    assert [e.stage for e in events] == ["retrieve", "generate"]
 
 
 def test_index_then_ask_returns_a_grounded_answer():
