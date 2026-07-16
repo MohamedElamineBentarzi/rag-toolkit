@@ -12,11 +12,14 @@ a sample (`ragas`, later).
 
 from .answer_match import AnswerMatchEvaluator, exact_match, token_f1
 from .base import EvalOutcome, EvalSample, Evaluator, MetricReport
+from .builder import PipelineBuilder, PipelineFactory
 from .cost import CostCollector
 from .ir_metrics import RetrievalEvaluator, ndcg_at_k, recall_at_k, reciprocal_rank
 from .leaderboard import Leaderboard
+from .space import Choice, SearchSpace, choice
 from .trial import Trial, trial_id_for
 from .trial_log import TrialLog
+from .tuning import GridTuner, RandomTuner, Tuner
 
 __all__ = [
     "Evaluator",
@@ -35,4 +38,12 @@ __all__ = [
     "TrialLog",
     "CostCollector",
     "Leaderboard",
+    "SearchSpace",
+    "Choice",
+    "choice",
+    "PipelineBuilder",
+    "PipelineFactory",
+    "Tuner",
+    "GridTuner",
+    "RandomTuner",
 ]

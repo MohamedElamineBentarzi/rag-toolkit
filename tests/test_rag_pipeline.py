@@ -47,6 +47,34 @@ def test_the_generate_event_carries_usage_so_cost_needs_no_answer():
     assert generate.detail["usage"] == {}
 
 
+def test_ask_with_context_returns_both_halves_and_still_traces():
+    # The seam evaluation needs: scoring retrieval AND generation from one run
+    # requires both halves. Hand-rolling it (query() + generate()) skips the
+    # "generate" event, so a trial silently under-reports the costly stage.
+    events: list[TraceEvent] = []
+    rag = RagPipeline(chunker=MarkdownChunker(), trace=events.append)
+    rag.index(source())
+    events.clear()
+
+    answer, context = rag.ask_with_context("What is the capital of France?", k=2)
+
+    assert isinstance(answer, Answer) and "Paris" in answer.text
+    assert len(context) == 2
+    assert all(sc.chunk.id for sc in context)
+    assert [e.stage for e in events] == ["retrieve", "generate"]
+
+
+def test_ask_delegates_to_ask_with_context():
+    # One implementation, two views of it — `ask` must not drift into a second
+    # copy of the read path.
+    rag = RagPipeline(chunker=MarkdownChunker())
+    rag.index(source())
+
+    plain = rag.ask("bananas", k=1)
+    answer, _ = rag.ask_with_context("bananas", k=1)
+    assert plain.text == answer.text
+
+
 def test_a_full_ask_traces_every_stage_of_the_read_path():
     events: list[TraceEvent] = []
     rag = RagPipeline(chunker=MarkdownChunker(), trace=events.append)

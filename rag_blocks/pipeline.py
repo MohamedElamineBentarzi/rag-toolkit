@@ -468,6 +468,20 @@ class RagPipeline:
 
     def ask(self, question: Query | str, k: int = 8) -> Answer:
         """Retrieve → refine → generate a cited Answer for `question`."""
+        answer, _ = self.ask_with_context(question, k)
+        return answer
+
+    def ask_with_context(
+        self, question: Query | str, k: int = 8
+    ) -> tuple[Answer, list[ScoredChunk]]:
+        """`ask`, but also returning the context the answer was built from.
+
+        Exists for evaluation: scoring retrieval and generation from one run
+        needs both halves, and the alternative — calling `query_pipeline.query`
+        and `generator.generate` by hand — silently skips the "generate" trace
+        event below, so a trial under-reports the one stage that costs money.
+        A caller should never have to reimplement a pipeline to observe it.
+        """
         query = question if isinstance(question, Query) else Query(text=question)
         context = self.query_pipeline.query(query, k)
         start = time.perf_counter()
@@ -483,7 +497,7 @@ class RagPipeline:
                 "usage": dict(answer.usage),
             },
         ))
-        return answer
+        return answer, context
 
     # -- citation → source resolution ----------------------------------------
 
