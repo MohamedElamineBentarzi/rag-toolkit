@@ -18,6 +18,7 @@ Why this matters (Open/Closed Principle in practice):
 
 from __future__ import annotations
 
+import logging
 from importlib import metadata
 from typing import Any, Optional, Type, TypeVar
 
@@ -25,6 +26,8 @@ from .component import Component
 from .errors import ComponentNotFoundError, DuplicateComponentError
 
 __all__ = ["Registry", "registry"]
+
+_log = logging.getLogger(__name__)
 
 ENTRY_POINT_GROUP = "rag_blocks.components"
 
@@ -118,8 +121,14 @@ class Registry:
         for ep in eps:
             try:
                 ep.load()  # side effect: module-level @registry.register runs
-            except Exception:  # noqa: BLE001 - isolate faulty plugins
-                continue
+            except Exception as exc:  # noqa: BLE001 - isolate faulty plugins
+                # Never crash core over a third-party plugin, but the failure
+                # must be discoverable — a silent drop is an hour of a plugin
+                # author's life. (AGENTS.md forbids swallowing without context.)
+                _log.warning(
+                    "rag_blocks: entry-point plugin %r failed to load: %s",
+                    ep.name, exc,
+                )
 
 
 #: The default process-wide registry. A module-level singleton is a pragmatic

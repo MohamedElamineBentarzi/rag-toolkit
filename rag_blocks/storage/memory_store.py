@@ -1,13 +1,13 @@
 """MemoryVectorStore: an in-process, zero-dependency, multi-vector index.
 
 Pure-Python search over dicts — cosine for dense spaces, dot product for
-sparse ones. Not built for scale — built to be the honest, dependency-free
+sparse ones. Not built for scale — built to be the dependency-free
 store that the test suite and the auto-tuner lean on for small corpora, and the
 *reference implementation* of the `vector_store` contract (v2): named+typed
 multi-vector spaces, `fetch` without a query vector, and `update_vectors`.
 Pairs naturally with `HashingEmbedder` for a fully hermetic index→search loop.
 
-Idempotency falls out for free: everything is keyed by `chunk.id` (deterministic
+Idempotency is inherent: everything is keyed by `chunk.id` (deterministic
 `doc_id:index`), so re-upserting overwrites. Ephemeral by design — `persist` is
 a no-op; reach for `qdrant` when you need durability or scale.
 """
@@ -20,6 +20,7 @@ from typing import Any, Mapping, Optional, Sequence
 from ..core.contracts import Chunk, ScoredChunk, SparseVector, VectorSpec, VectorValue
 from ..core.errors import ConfigError, StorageError
 from ..core.registry import registry
+from .filters import matches
 from .vector_store import VectorStore
 
 __all__ = ["MemoryVectorStore"]
@@ -113,7 +114,7 @@ class MemoryVectorStore(VectorStore):
         scored: list[ScoredChunk] = []
         for chunk_id, stored in space.items():
             chunk = self._chunks[chunk_id]
-            if filters and not _matches(chunk, filters):
+            if filters and not matches(chunk, filters):
                 continue
             scored.append(ScoredChunk(chunk=chunk, score=score(vector, stored)))
         # Highest score first; ties broken by chunk id for a stable order.
@@ -123,7 +124,7 @@ class MemoryVectorStore(VectorStore):
     def fetch(self, filters: dict, limit: int = 100) -> list[Chunk]:
         out: list[Chunk] = []
         for chunk in self._chunks.values():
-            if _matches(chunk, filters):
+            if matches(chunk, filters):
                 out.append(chunk)
                 if len(out) >= limit:
                     break
@@ -154,22 +155,6 @@ def _sparse_dot(a: Any, b: Any) -> float:
     encoder's weights), so no length normalization here."""
     bmap = dict(zip(b.indices, b.values))
     return sum(w * bmap.get(i, 0.0) for i, w in zip(a.indices, a.values))
-
-
-def _matches(chunk: Chunk, filters: dict) -> bool:
-    """Shared filter semantics: scalar value ⇒ equality, list value ⇒
-    membership. Each key resolves to a `Chunk` field (doc_id, index, …) or a
-    `chunk.metadata` entry."""
-    for key, expected in filters.items():
-        actual = getattr(chunk, key, None)
-        if actual is None:
-            actual = chunk.metadata.get(key)
-        if isinstance(expected, (list, tuple, set)):
-            if actual not in expected:
-                return False
-        elif actual != expected:
-            return False
-    return True
 
 
 def _specs_compatible(a: VectorSpec, b: VectorSpec) -> bool:

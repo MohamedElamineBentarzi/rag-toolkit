@@ -16,8 +16,9 @@ instruction-tuned sparse models weight a query differently from a passage, so
 `encode_texts` (passages) and `encode_query` (one query) are separate methods —
 symmetric encoders just implement both the same way.
 
-Implementations arrive as lazy-import extras (v0.6 lands the contract; encoders
-are fast-follow); the memory store + this contract stay the zero-dep reference.
+Concrete encoders ship as lazy-import extras and have not landed yet (the
+contract landed in v0.6; encoders are fast-follow); the memory store + this
+contract stay the zero-dep reference.
 """
 
 from __future__ import annotations

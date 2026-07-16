@@ -1,0 +1,120 @@
+name: Release
+
+# Publishes to PyPI when a push to main carries a version (pyproject.toml)
+# that is not yet on PyPI. The version bump IS the release button:
+#   1. bump [project].version + move CHANGELOG [Unreleased] into the entry
+#   2. merge to main
+#   3. this workflow: gate -> test -> build -> publish (OIDC) -> tag + GH Release
+#
+# Auth is PyPI Trusted Publishing — NO token lives in this repo. The
+# publisher is registered on PyPI as (owner, repo, release.yml, env "pypi").
+
+on:
+  push:
+    branches: [main]
+
+# Never run two releases at once; never cancel one mid-publish.
+concurrency:
+  group: pypi-release
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+      version: ${{ steps.decide.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Publish only if this version is not already on PyPI
+        id: decide
+        run: |
+          LOCAL=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          PUBLISHED=$(curl -sf https://pypi.org/pypi/rag-blocks/json \
+            | python -c "import json,sys; print('\n'.join(json.load(sys.stdin)['releases']))" \
+            || true)  # 404 = project not on PyPI yet = publish
+          if echo "$PUBLISHED" | grep -qx "$LOCAL"; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$LOCAL already on PyPI — nothing to release."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$LOCAL is new — releasing."
+          fi
+          echo "version=$LOCAL" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"   # oldest supported: catches >=3.11-isms
+      - name: Lint, type-check, hermetic tests
+        run: |
+          python -m pip install -e ".[dev]"
+          ruff check .
+          mypy rag_blocks
+          pytest
+
+  build:
+    needs: [gate, test]
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+      - name: Check metadata
+        run: python -m twine check --strict dist/*
+      - name: "Sanity: built version matches the gate"
+        run: |
+          ls dist/ | grep -F "${{ needs.gate.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: [gate, build]
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # mint the OIDC token for Trusted Publishing
+    steps:
+      # Deliberately NO checkout: this job never runs project code.
+      # It downloads the already-built, already-checked artifact and ships it.
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  tag:
+    needs: [gate, publish]
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the tag + GitHub Release
+    steps:
+      - name: Tag and create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.gate.outputs.version }}
+        run: |
+          gh release create "v$V" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "v$V" \
+            --generate-notes

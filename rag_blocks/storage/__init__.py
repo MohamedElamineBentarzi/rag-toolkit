@@ -1,8 +1,9 @@
-"""Storage subsystem: durable byte storage (the pipeline's source of truth).
+"""Storage subsystem: blob stores, vector stores, and the lexical index.
 
-Importing this package registers the built-in blob stores (module import is the
-registration side effect the registry relies on). The vector store and lexical
-index kinds will join this package in the v0.3 storage milestone.
+Importing this package registers the built-in stores (module import is the
+registration side effect the registry relies on): blob stores are the
+pipeline's durable source of truth; vector stores and the classic-BM25
+lexical index hold the derived, rebuildable retrieval representations.
 """
 
 from .base import BlobStore

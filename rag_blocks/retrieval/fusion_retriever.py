@@ -8,7 +8,7 @@ retriever). A retriever wrapping retrievers, like `nn.Sequential` wraps modules.
 
 Each sub-retriever is over-fetched to `fetch_k` depth so fusion sees enough of
 each ranking, then their rankings are blended by RRF (see `fusion.py`). Filters
-fan out for free: the same `Query` (filters included) goes to every
+fan out automatically: the same `Query` (filters included) goes to every
 sub-retriever, which forwards them to its backend.
 """
 

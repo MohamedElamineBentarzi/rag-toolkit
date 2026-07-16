@@ -1,7 +1,7 @@
 """ExtractiveGenerator: a zero-dependency, deterministic generator.
 
 No LLM: the "answer" is the single highest-ranked passage, returned verbatim
-with its citation marker. That is a real extractive-QA baseline — the honest
+with its citation marker. That is a real extractive-QA baseline — the
 floor the tuner compares every generative model against — and it makes the whole
 query→answer→citation path testable without a network or an API key.
 """

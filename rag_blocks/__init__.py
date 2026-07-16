@@ -30,11 +30,12 @@ from .core import (
     Component,
     Document,
     EmbeddingError,
+    EnrichmentError,
     GenerationError,
     Page,
     PageSpan,
     Query,
-    RagToolkitError,
+    RagBlocksError,
     ScoredChunk,
     Source,
     SourceFormat,
@@ -97,7 +98,15 @@ from .storage import (
     VectorStore,
 )
 
-__version__ = "0.6.0"
+# Single source of truth is pyproject.toml; read it back from the installed
+# distribution metadata so the two can never drift.
+from importlib.metadata import PackageNotFoundError as _PkgNotFound
+from importlib.metadata import version as _dist_version
+
+try:
+    __version__ = _dist_version("rag-blocks")
+except _PkgNotFound:  # running from a source tree without an install
+    __version__ = "0.0.0+unknown"
 
 __all__ = [
     "ingest",
@@ -166,7 +175,7 @@ __all__ = [
     "QueryPipeline",
     "RagPipeline",
     "TraceEvent",
-    "RagToolkitError",
+    "RagBlocksError",
     "StorageError",
     "EmbeddingError",
     "GenerationError",
@@ -184,6 +193,11 @@ def ingest(path: str | Path, **docling_overrides) -> Document:
 
     For full control (custom routes, streaming, in-memory sources), drop one
     level down to AutoParser / DoclingParser directly.
+
+    Batch note: this builds a fresh ``AutoParser`` every call, which reloads the
+    docling layout models per file. To ingest many documents, hold one parser
+    and reuse it — ``p = AutoParser(); [p.parse(Source.from_path(f)) for f in files]``
+    — so the expensive models load once.
     """
     parser_configs = {"docling": docling_overrides} if docling_overrides else {}
     parser = AutoParser(parser_configs=parser_configs)

@@ -1,6 +1,6 @@
 """ScoreThreshold: drop candidates below a relevance floor.
 
-The simplest refiner, and a genuinely useful one: retrieval always returns
+The simplest refiner, and a useful one: retrieval always returns
 `fetch_k` candidates whether or not any are relevant, so a low-similarity tail
 rides along and can pollute the generator's context. `ScoreThreshold` keeps only
 candidates scoring `>= min_score`, in the order they arrived (it reorders

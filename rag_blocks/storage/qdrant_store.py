@@ -401,8 +401,9 @@ def _from_payload(payload: dict) -> Chunk:
 def _to_filter(models: Any, filters: Optional[dict]) -> Any:
     """Translate a filter dict into a Qdrant Filter (must-match).
 
-    Shared semantics: scalar value ⇒ `MatchValue` (equality); list value ⇒
-    `MatchAny` (membership)."""
+    Native translation of the semantics defined in ``storage/filters.py``
+    (the reference): scalar value ⇒ `MatchValue` (equality); list value ⇒
+    `MatchAny` (membership); keys AND-ed as `must` conditions."""
     if not filters:
         return None
     conditions = []

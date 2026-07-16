@@ -1,10 +1,10 @@
 # rag-blocks — Architecture
 
 This document is the blueprint of the whole library: the pipeline map, the
-data contracts, every stage interface (including the ones not yet coded), the
-design-pattern rationale, and the design of the evaluation / auto-tuning
-suite. The ingestion subsystem (v0.1) is fully implemented; everything else
-is specified here so each future stage drops into a slot that already exists.
+data contracts, every stage interface, the design-pattern rationale, and the
+design of the evaluation / auto-tuning suite. As of v0.7.0 every subsystem
+through generation is implemented; the evaluation & auto-tuning suite (§6)
+is the committed v0.8 milestone and remains design-only.
 
 ---
 
@@ -21,7 +21,7 @@ come back here.
    retrievers; an auto parser *contains* format-specific parsers. Deep
    inheritance trees are forbidden; the only mandatory base is `Component`.
 3. **Streaming-first.** The primitive operation of data-producing stages is
-   a generator (`iter_pages`, `chunk_stream`). Materialization (`parse()`)
+   a generator (`iter_pages`, `iter_spans`). Materialization (`parse()`)
    is a convenience layered on top, never the foundation. Memory must not
    scale with document size.
 4. **Open/Closed via the registry.** New capability = new registered class.
@@ -108,7 +108,8 @@ vocabulary of multi-representation storage; a `Chunk` never carries vectors.
 ## 3. Stage catalog
 
 Each stage is a `Component` subclass with a `kind`, registered under a name.
-Signatures below are the committed interfaces for future versions.
+Signatures below are the committed interfaces; every stage through Generator
+is implemented — Evaluator (§3.9) is design-only until v0.8.
 
 ### 3.1 Parser — implemented (v0.1)
 
@@ -289,11 +290,11 @@ Two families with very different costs (see §6): retrieval metrics
 | Pattern | Where | Why it earns its place |
 |---|---|---|
 | Strategy | every stage interface | swap algorithms without touching callers; the whole premise of the toolkit |
-| Adapter | `DoclingParser`, `MistralOcrEngine`, `GoogleDocAiOcrEngine`, future store/embedder wrappers | vendor APIs normalized behind our contracts; vendor churn stays inside one file |
+| Adapter | `DoclingParser`, `MistralOcrEngine`, `GoogleDocAiOcrEngine`, `QdrantVectorStore`, `MinioBlobStore`, `SentenceTransformerEmbedder` | vendor APIs normalized behind our contracts; vendor churn stays inside one file |
 | Registry + Factory Method | `core.registry` | string → instance; makes pipelines pure data and enables plugins via entry points |
-| Facade | `rk.ingest()`, `AutoParser`, future `RagPipeline` | one obvious call for the 90% case, full machinery still reachable underneath |
+| Facade | `rk.ingest()`, `AutoParser`, `RagPipeline` | one obvious call for the 90% case, full machinery still reachable underneath |
 | Template Method | `Parser.parse()` over abstract `iter_pages()` | assembly + provenance implemented once, correctly, for every parser |
-| Iterator / generator pipeline | `iter_pages`, `chunk_stream`, `recognize_batch` | O(batch) memory, backpressure for free, no queues or threads |
+| Iterator / generator pipeline | `iter_pages`, `iter_spans`, `recognize_batch` | O(batch) memory, backpressure for free, no queues or threads |
 | Composite | `AutoParser`, `HybridRetriever`, `FusionRetriever` | components made of components, uniform to callers (Liskov) |
 | Null Object (as empty chain) | empty `refine=[]` / `enrich=[]` | optional stages without `if x is not None`; the empty chain *is* the null object (no `NoOp*` classes) |
 | Immutable value objects | `Source`, `PageSpan`, `PageImage` | safe to share across caches and (later) threads |
@@ -483,8 +484,8 @@ rag_blocks/
   retrieval/     index ✓, hybrid ✓, fusion ✓, multi-query ✓, hyde ✓ (composition axis) [v0.4/0.6]
   refinement/    keyword ✓, cross-encoder ✓, neighbor-expander ✓, score-threshold ✓ (was reranking/) [v0.4/0.6]
   generation/    extractive ✓, anthropic ✓ (+.complete); packing+citations ✓ [v0.5]
-  evaluation/    retrieval + LLM-judge metrics                 [v0.7]
-  tuning/        search space, tuners, trial log, leaderboard  [v0.7]
+  evaluation/    retrieval + LLM-judge metrics                 [v0.8]
+  tuning/        search space, tuners, trial log, leaderboard  [v0.8]
   pipeline.py    IndexingPipeline ✓ QueryPipeline ✓ RagPipeline ✓ (composition root) [v0.2+]
 ```
 

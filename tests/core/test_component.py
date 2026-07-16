@@ -51,6 +51,26 @@ def test_secrets_are_redacted_and_do_not_affect_identity():
     assert a.fingerprint() == b.fingerprint()
 
 
+class Nested(Component):
+    kind = "toy"
+    name = "nested"
+
+    @dataclass
+    class Config:
+        headers: Optional[dict] = None
+
+
+def test_nested_dict_secrets_are_redacted_at_every_depth():
+    # A token tucked inside a non-secret-named field must still be redacted (A6).
+    c = Nested(headers={"authorization": "Bearer tok", "accept": "json"})
+    cfg = c.describe()["config"]["headers"]
+    assert cfg["authorization"] == "<redacted>"
+    assert cfg["accept"] == "json"
+    # And it must not leak into the fingerprint either.
+    other = Nested(headers={"authorization": "Bearer different", "accept": "json"})
+    assert c.fingerprint() == other.fingerprint()
+
+
 def test_enums_serialize_as_plain_values():
     from rag_blocks.ingestion.parsers.docling_parser import DoclingParser
 

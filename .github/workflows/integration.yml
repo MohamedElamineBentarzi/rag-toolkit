@@ -1,0 +1,48 @@
+name: Integration
+
+# The heavy, opt-in tests (real docling/OCR/embedding stacks and external
+# services). Not on the PR path — runs nightly and on manual dispatch so the
+# fast hermetic suite stays the gate for every change.
+#
+# Tests self-skip when their dependency or credential is absent, so this is
+# safe to run even before all secrets are configured. Set repo secrets to
+# widen coverage:
+#   ANTHROPIC_API_KEY   -> exercises the Anthropic generator
+# Qdrant runs in-process (:memory:); MinIO is provided as a service below.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # 03:00 UTC nightly
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      minio:
+        image: bitnami/minio:latest
+        ports: ["9000:9000"]
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+    env:
+      MINIO_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: rag-blocks-tests
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (all extras + dev)
+        run: pip install -e ".[all,dev]"
+      - name: Wait for MinIO
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live; then echo ready; break; fi
+            echo "waiting for minio ($i)"; sleep 2
+          done
+      - name: Integration tests
+        run: pytest -m integration -v

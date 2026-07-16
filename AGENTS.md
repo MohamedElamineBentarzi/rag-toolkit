@@ -48,9 +48,11 @@ functions, intention-revealing names, no clever tricks — there is a comment in
 `plaintext.py` where a "clever" one-liner was deliberately rewritten as two
 clear lines; that is the house style).
 
-Current state: **v0.1 — core + ingestion subsystem implemented and tested**
-(64 hermetic tests passing, 1 opt-in integration test). Everything else is
-specified (here and in ARCHITECTURE.md) but not coded.
+Current state: **v0.7.0 — eight subsystems implemented and tested** (core,
+ingestion, chunking, enrichment, embedding, storage, retrieval + refinement,
+generation; 237 hermetic tests + 13 opt-in integration tests). The evaluation
+& auto-tuning suite (§7.3) is the committed v0.8 milestone and the one major
+spec in this file not yet coded.
 
 ---
 
@@ -281,12 +283,15 @@ caution for future vendor adapters.
 
 ---
 
-## 7. Committed designs NOT yet coded (implement to these specs)
+## 7. Committed designs and their rationale (status marked per subsection)
 
-These were decided in design discussion with the owner and exist only here.
-Do not re-litigate them; do refine details that don't contradict them.
+These were decided in design discussion with the owner. Most are now
+implemented — their specs remain here as the rationale of record and the
+standard any change is reviewed against. §7.3 is the one still-uncoded spec:
+implement it to the letter. Do not re-litigate any of them; do refine details
+that don't contradict them, and flag (don't silently fix) code/spec conflicts.
 
-### 7.1 Chunker (v0.2 — the next milestone)
+### 7.1 Chunker *(implemented in v0.2 — spec kept as rationale)*
 
 ```python
 class Chunker(Component):
@@ -314,7 +319,8 @@ legal** (overlap strategies express naturally in coordinates — this is *why*
 strategies emit spans, not strings: return strings and provenance,
 overlap, and neighbor merging all die). Strategies are config-only.
 
-Planned implementations: `fixed` (chunk_chars=1600, overlap_chars=200; prefer
+Implementations — `fixed` and `markdown-aware` shipped; `chonkie` and
+`semantic` still wanted: `fixed` (chunk_chars=1600, overlap_chars=200; prefer
 cutting at `\n\n`, refuse a soft cut that would leave < size/2 — mirror the
 newline-preference logic in `PlainTextParser._cut_point`), `markdown-aware`
 (cut at heading positions — this is the payoff of normalizing ingestion to
@@ -327,7 +333,7 @@ version, don't build it now. Ship
 `tests/contract_checks.py::assert_chunker_contract` (index contiguity, span
 ordering/bounds, slices match text, page fields filled, determinism) alongside.
 
-### 7.2 BlobStore (with v0.3 storage)
+### 7.2 BlobStore *(implemented in v0.3)*
 
 New component kind `"blob_store"`: `put(key: str, data: bytes)`,
 `get(key) -> bytes`, `exists(key) -> bool` (streaming variants may come
@@ -352,7 +358,7 @@ payload so query time never touches the blob store; re-embedding with a new
 model reads markdown from the blob store and never re-parses. Trial logs are
 NOT blobs — they go to JSONL + SQLite.
 
-### 7.3 Evaluation & tuning (v0.6–0.7)
+### 7.3 Evaluation & tuning *(v0.8 — the next milestone, NOT yet coded)*
 
 `Evaluator` kind with `stage: "retrieval" | "generation"`. Two families by
 cost: classic IR metrics (recall@k, MRR, nDCG — pure math, no LLM) and
@@ -399,17 +405,15 @@ deliverable.
   don't receive secrets — which is fine BY DESIGN because the default test
   suite is hermetic; only `-m integration` needs keys (run on main/nightly).
 
-### 7.5 License
+### 7.5 License *(done)*
 
-Apache-2.0 (decided; already in pyproject). Before first publish: add
-verbatim `LICENSE` text (never edited), optional one-line `NOTICE`
-(`rag-blocks — Copyright 2026 Mohamed Elamine Bentarzi`), prefer PEP 639
-form `license = "Apache-2.0"` + `license-files = ["LICENSE"]` in pyproject.
-Rationale: explicit patent grant, contribution licensing (§5), ecosystem norm
-for RAG infra. Decided while sole-author — do not merge external PRs before
-LICENSE lands.
+Apache-2.0, fully in place: verbatim `LICENSE` text (never edit it), one-line
+`NOTICE` (`rag-blocks — Copyright 2026 Mohamed Elamine Bentarzi`), and the
+PEP 639 form `license = "Apache-2.0"` + `license-files = ["LICENSE"]` in
+pyproject. Rationale: explicit patent grant, contribution licensing (§5),
+ecosystem norm for RAG infra.
 
-### 7.6 ChunkIndex, composition algebra & multi-representation retrieval (DR-0001 v2)
+### 7.6 ChunkIndex, composition algebra & multi-representation retrieval *(implemented in v0.6 — DR-0001 v2, see `docs/decisions/`)*
 
 All retrieval representations of a corpus are owned by one `ChunkIndex`:
 `add(chunks)` writes every representation; `search(name, TEXT, k, filters)`
@@ -459,7 +463,7 @@ a kind.
 - Lazy vendor imports, exact idiom: import inside the method that needs it,
   wrap `ImportError`, raise a toolkit error naming the extra:
   `"... requires 'docling'. Install with: pip install 'rag-blocks[docling]'"`.
-- Errors: single root `RagToolkitError`; raise narrow subclasses with context
+- Errors: single root `RagBlocksError`; raise narrow subclasses with context
   (`ParseError(msg, source_uri=..., page_number=...)`) — "PDF failed" is
   useless in a 10k-document batch. Fail fast at construction (unknown engine
   name explodes in `__init__`, not on page 500). Never swallow exceptions
@@ -506,8 +510,9 @@ a kind.
   (emulates the pytest subset this suite uses). It is intentionally frozen:
   **extend the tests, never the shim**; if a new pytest feature is needed and
   the shim can't run it, the shim loses.
-- CI (`.github/workflows/ci.yml`): ruff + pytest w/ coverage on 3.10–3.12.
-  Keep it green; run lint/type/tests locally before proposing changes.
+- CI (`.github/workflows/ci.yml`): ruff + mypy + pytest with a coverage gate
+  (fail under 80%) on Python 3.10–3.13, plus a Windows lane. Keep it green;
+  run lint/type/tests locally before proposing changes.
 
 ---
 
@@ -528,25 +533,34 @@ a kind.
    user-visible.
 9. `ruff check` clean, `mypy` clean, full suite green.
 
-## 11. Roadmap (build in this order)
+## 11. Roadmap
 
-v0.2 chunking (`fixed`, `markdown-aware`, `chonkie` per §7.1) + `Chunk`
-char-offset fields + chunker contract checks → v0.2+ thin
+**Shipped (v0.2–v0.7, in this order):** chunking (`fixed`, `markdown-aware`)
++ `Chunk` char-offset fields + chunker contract checks → thin
 `IndexingPipeline`/`QueryPipeline`/`RagPipeline` (dumb for-loops over
 generators + tracing hooks; intelligence in components, wiring in config) →
-v0.3 embedding (`bge-m3` first, `embed_query` separate from `embed_texts` —
-instruction-prefix asymmetry) + storage (`memory` store for tests/tuning,
-`qdrant`, `LocalBlobStore`/`MinioBlobStore` per §7.2) → v0.4 retrieval
-(`dense`, `bm25`, `hybrid` Composite w/ RRF) + reranking (`bge-reranker`,
-`noop`) → v0.5 generation (context packing, token budget, citation markers
-resolved through chunk→page provenance) → **v0.6 the DR-0001 v2 restructure
-(§7.6): `ChunkIndex` aggregate + multi-vector `vector_store`; retrieval collapses
-into the composition axis (`index`/`hybrid`/`fusion`/`multi-query`/`hyde`) and
-reranking dissolves into the `refiner` chain; `CachingEmbedder`; `sparse_encoder`
-interface** → v0.7 evaluation (IR metrics + `RagasEvaluator` per §7.3) + tuning
-(SearchSpace, grid/random tuners, trial log, leaderboard w/ marginal analysis).
-Each milestone ships **at least two interchangeable implementations per stage** —
-swapping is the proof the library works.
+embedding (`bge-m3` via sentence-transformers, `embed_query` separate from
+`embed_texts` — instruction-prefix asymmetry) + storage (`memory` store for
+tests/tuning, `qdrant`, `LocalBlobStore`/`MinioBlobStore` per §7.2) →
+retrieval + refinement → generation (context packing, token budget, citation
+markers resolved through chunk→page provenance) → the DR-0001 v2 restructure
+(§7.6): `ChunkIndex` aggregate + multi-vector `vector_store`; retrieval
+collapsed into the composition axis (`index`/`hybrid`/`fusion`/`multi-query`/
+`hyde`) and reranking dissolved into the `refiner` chain; `CachingEmbedder`;
+`sparse_encoder` interface.
+
+**Known gaps within the shipped surface:** no concrete `SparseEncoder`
+implementation yet (the contract exists; encoders are fast-follow) and no
+`chonkie` chunker adapter yet (still wanted per §7.1).
+
+**Next: v0.8 evaluation & tuning per §7.3** (IR metrics + `RagasEvaluator`,
+SearchSpace, grid/random tuners, trial log, leaderboard w/ marginal
+analysis). Beyond v0.8, the versioned unlock plan (streaming generation seam,
+late chunking, agentic composites, multi-vector/MaxSim, ColPali projection)
+lives in `tump_docs/RAG-SOTA-ROADMAP.md` and its companions; those documents
+graduate into `docs/` as each milestone starts. Each milestone ships **at
+least two interchangeable implementations per stage** — swapping is the proof
+the library works.
 
 ## 12. When uncertain, decide like this
 

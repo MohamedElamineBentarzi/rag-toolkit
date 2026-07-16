@@ -8,6 +8,7 @@ inherits every guarantee the rest of the pipeline relies on.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 
 import pytest
 
@@ -21,7 +22,7 @@ from rag_blocks.core.contracts import (
     Source,
     VectorSpec,
 )
-from rag_blocks.core.errors import RagToolkitError, StorageError
+from rag_blocks.core.errors import RagBlocksError, StorageError
 from rag_blocks.embedding.base import Embedder
 from rag_blocks.enrichment.base import Enricher
 from rag_blocks.generation.base import Generator
@@ -209,7 +210,7 @@ def assert_vector_store_contract(store: VectorStore, dimensions: int = 8) -> Non
     # Re-declaring the same schema validates and is a no-op (not an error).
     store.ensure_schema([spec])
     # A conflicting redeclaration must fail loudly, never coerce.
-    with pytest.raises(RagToolkitError):
+    with pytest.raises(RagBlocksError):
         store.ensure_schema([VectorSpec("dense", "dense", dimensions + 1)])
 
     # 1. Empty store: search yields nothing (not an error).
@@ -234,6 +235,15 @@ def assert_vector_store_contract(store: VectorStore, dimensions: int = 8) -> Non
     # 4. Re-upserting the same ids overwrites, never duplicates.
     store.upsert(chunks, {"dense": dense})
     assert len(store.search("dense", unit(0), k=10)) == 3
+
+    # 4b. Upsert is by id and content-replacing: re-upserting an existing id
+    #     with different text overwrites the stored chunk (A1 — the vector and
+    #     lexical sides must agree on this so a re-index can't desync them).
+    reworded = replace(chunks[0], text="a completely different chunk body")
+    store.upsert([reworded], {"dense": [unit(0)]})
+    refetched = store.fetch({"doc_id": "d", "index": 0}, limit=1)
+    assert refetched and refetched[0].text == "a completely different chunk body"
+    store.upsert(chunks, {"dense": dense})  # restore for later steps
 
     # 5. Equality filters narrow the result set.
     filtered = store.search("dense", unit(1), k=10, filters={"index": 1})
@@ -287,6 +297,15 @@ def assert_lexical_index_contract(index: LexicalIndex) -> None:
     index.add(chunks)
     assert len(index.search("quick", k=10)) <= 3
 
+    # 4b. add() is upsert, not skip-if-present: re-adding an id with different
+    #     text overwrites — the new text becomes searchable and the stale text
+    #     disappears (A1). "fox" lived only in d:0; after rewording it, nothing
+    #     should match it, and the new term should.
+    index.add([replace(chunks[0], text="parliament ratified the trade treaty")])
+    assert index.search("parliament", k=5), "new text under an existing id must win"
+    assert index.search("fox", k=5) == [], "stale text under a reused id must be gone"
+    index.add(chunks)  # restore for later steps
+
     # 5. Filters narrow the set.
     filtered = index.search("quarter", k=10, filters={"index": 2})
     assert all(r.chunk.index == 2 for r in filtered)
@@ -333,7 +352,7 @@ def assert_index_contract(index) -> None:
         assert len(index.search(rep, "quick", k=10)) <= len(chunks)
 
     # 5. Unknown representation fails loudly.
-    with pytest.raises(RagToolkitError):
+    with pytest.raises(RagBlocksError):
         index.search("no-such-representation", "quick", k=1)
 
     # 6. Deterministic identity.

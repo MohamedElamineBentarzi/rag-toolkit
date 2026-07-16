@@ -71,6 +71,8 @@ venv.bak/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+# Local scratch notebooks (executed outputs / dotenv workflow — keep local)
+examples/*.ipynb
 
 # IDEs / editors
 .idea/

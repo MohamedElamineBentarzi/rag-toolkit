@@ -9,9 +9,11 @@ Design choices:
 - Document frequency is computed at query time from the stored per-document term
   counts, not maintained incrementally — so there are no separate "parameters"
   to keep in sync, and the persisted state is just (chunks, term-counts, lengths).
-- `add` is idempotent by `chunk.id`: an id already present is skipped (ids are
-  content-derived — `doc_id:index` — so a repeat id means identical text). This
-  makes re-ingesting overlapping batches, and re-adding after a `load`, cheap.
+- `add` is *upsert* by `chunk.id`, mirroring `VectorStore.upsert`: re-adding an
+  id recomputes its term counts and length. Ids are `doc_id:index`, but the text
+  behind an id is NOT stable — a chunker config change or an enricher rewrites
+  the text under the same id — so overwrite (not skip) is what keeps a persisted
+  lexical namespace consistent with the vector side after a re-index.
 
 Persistence (the "survives a restart" story): the index knows how to serialize
 itself, but NOT where the bytes live — that is delegated to an injected
@@ -33,6 +35,7 @@ from typing import Any, Optional, Sequence
 from ..core.contracts import Chunk, ScoredChunk
 from ..core.registry import registry
 from .base import BlobStore
+from .filters import matches
 from .lexical_index import LexicalIndex
 
 __all__ = ["BM25Index"]
@@ -47,7 +50,7 @@ def _tokenize(text: str) -> list[str]:
 @registry.register
 class BM25Index(LexicalIndex):
     name = "bm25"
-    version = "0.1.0"
+    version = "0.2.0"  # 0.2.0: add() upserts instead of skipping existing ids
 
     @dataclass
     class Config:
@@ -67,9 +70,10 @@ class BM25Index(LexicalIndex):
         self._len: dict[str, int] = {}
 
     def add(self, chunks: Sequence[Chunk]) -> None:
+        # Upsert by id: overwrite recomputes tf/len so re-adding an id with new
+        # text (re-chunk, enrich) wins, matching VectorStore.upsert. Re-adding
+        # identical text is a harmless no-op (same counts recomputed).
         for chunk in chunks:
-            if chunk.id in self._chunks:
-                continue  # idempotent: same id ⇒ same content, nothing to do
             tokens = _tokenize(chunk.text)
             self._chunks[chunk.id] = chunk
             self._tf[chunk.id] = Counter(tokens)
@@ -88,7 +92,7 @@ class BM25Index(LexicalIndex):
         scored: list[ScoredChunk] = []
         for chunk_id, tf in self._tf.items():
             chunk = self._chunks[chunk_id]
-            if filters and not _matches(chunk, filters):
+            if filters and not matches(chunk, filters):
                 continue
             score = self._score(query_terms, tf, self._len[chunk_id], avgdl, idf)
             if score > 0.0:
@@ -148,17 +152,3 @@ class BM25Index(LexicalIndex):
             denom = freq + k1 * (1 - b + b * dl / avgdl)
             score += idf[term] * (freq * (k1 + 1)) / denom
         return score
-
-
-def _matches(chunk: Chunk, filters: dict) -> bool:
-    """Shared filter semantics (D3): scalar ⇒ equality, list ⇒ membership."""
-    for key, expected in filters.items():
-        actual = getattr(chunk, key, None)
-        if actual is None:
-            actual = chunk.metadata.get(key)
-        if isinstance(expected, (list, tuple, set)):
-            if actual not in expected:
-                return False
-        elif actual != expected:
-            return False
-    return True

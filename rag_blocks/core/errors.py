@@ -1,7 +1,7 @@
 """Exception hierarchy for rag-blocks.
 
-Design note: one root exception (`RagToolkitError`) so callers can do a
-single broad `except RagToolkitError` at pipeline boundaries, plus narrow
+Design note: one root exception (`RagBlocksError`) so callers can do a
+single broad `except RagBlocksError` at pipeline boundaries, plus narrow
 subclasses so stage-level code can react precisely (e.g. retry on OcrError
 but not on UnsupportedFormatError). Errors carry context (source, page)
 because "PDF failed" is useless in a 10k-document batch run.
@@ -10,27 +10,27 @@ because "PDF failed" is useless in a 10k-document batch run.
 from __future__ import annotations
 
 
-class RagToolkitError(Exception):
+class RagBlocksError(Exception):
     """Root of all rag-blocks exceptions."""
 
 
-class ComponentNotFoundError(RagToolkitError):
+class ComponentNotFoundError(RagBlocksError):
     """Raised when the registry has no component under (kind, name)."""
 
 
-class DuplicateComponentError(RagToolkitError):
+class DuplicateComponentError(RagBlocksError):
     """Raised when two components register under the same (kind, name)."""
 
 
-class ConfigError(RagToolkitError):
+class ConfigError(RagBlocksError):
     """Raised when a component receives an invalid configuration."""
 
 
-class UnsupportedFormatError(RagToolkitError):
+class UnsupportedFormatError(RagBlocksError):
     """Raised when no parser can handle a source's format."""
 
 
-class ParseError(RagToolkitError):
+class ParseError(RagBlocksError):
     """Raised when parsing a source fails.
 
     Attributes:
@@ -55,7 +55,7 @@ class OcrError(ParseError):
     """Raised when an OCR engine fails on a page image."""
 
 
-class StorageError(RagToolkitError):
+class StorageError(RagBlocksError):
     """Raised when a blob store operation fails.
 
     Attributes:
@@ -69,16 +69,16 @@ class StorageError(RagToolkitError):
         super().__init__(message + location)
 
 
-class EmbeddingError(RagToolkitError):
+class EmbeddingError(RagBlocksError):
     """Raised when an embedder fails to vectorize text (model load, inference,
     or a missing optional dependency)."""
 
 
-class GenerationError(RagToolkitError):
+class GenerationError(RagBlocksError):
     """Raised when a generator fails to produce an answer (LLM call, or a
     missing optional dependency)."""
 
 
-class EnrichmentError(RagToolkitError):
+class EnrichmentError(RagBlocksError):
     """Raised when an enricher fails to augment chunks (LLM call, or a missing
     optional dependency)."""

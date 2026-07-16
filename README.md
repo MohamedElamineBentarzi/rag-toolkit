@@ -1,13 +1,39 @@
 # rag-blocks
 
-Composable building blocks for production RAG pipelines — every stage is a
-swappable component, every pipeline is a serializable config, and an
-auto-tuning evaluation suite finds the best combination for *your* dataset
-with full trial logs.
+[![CI](https://github.com/MohamedElamineBentarzi/rag-blocks/actions/workflows/ci.yml/badge.svg)](https://github.com/MohamedElamineBentarzi/rag-blocks/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/rag-blocks.svg)](https://pypi.org/project/rag-blocks/)
+[![Python](https://img.shields.io/pypi/pyversions/rag-blocks.svg)](https://pypi.org/project/rag-blocks/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-**Status: v0.1 — ingestion subsystem.** Any file in → clean markdown out,
-with per-page OCR routing (Mistral, Google Document AI, or your own engine)
-and streaming that keeps memory flat on 2 000-page PDFs.
+Composable building blocks for production RAG pipelines. Every stage — parse,
+chunk, enrich, embed, store, retrieve, rerank, generate — is a swappable
+component behind a stable contract, and the core runs on the Python standard
+library alone. Heavy vendor SDKs are optional extras you install only for the
+components you actually use.
+
+**Status: 0.7.0 — pre-1.0 and evolving.** Eight subsystems (ingestion through
+generation) are implemented and tested; the evaluation & auto-tuning suite is
+the next milestone (see [Roadmap](#roadmap)). Minor versions may break until 1.0.
+
+## Why rag-blocks?
+
+Haystack and LlamaIndex are frameworks you build *inside*; AutoRAG is the
+closest neighbor in spirit. rag-blocks bets on four things instead:
+
+- **Swappability is the product.** Not a framework to live in — blocks you
+  compose. Every stage meets its neighbors only through small dataclass
+  contracts, so you replace one component without touching the rest.
+- **Streaming-first ingestion** with per-page OCR routing to *any* engine
+  (Mistral, Google Document AI, your own). Memory stays flat on 2,000-page PDFs.
+- **Fingerprint-keyed caching** across pipelines: components that share a config
+  share a cache key, so re-runs and (soon) tuning reuse expensive stage outputs
+  instead of recomputing them.
+- **Provenance end to end.** Every chunk can answer "which pages of which file",
+  so answers carry citations back to the source.
+
+The core has **zero dependencies** — the default stack (hashing embedder, memory
+store, BM25, extractive generator) runs the whole index→ask loop on the standard
+library alone.
 
 ## Install
 
@@ -174,7 +200,7 @@ pipeline = IndexingPipeline(
 )
 
 for chunk in pipeline.index(Source.from_path("report.pdf")):
-    embed_and_store(chunk)        # your v0.3 embedder/vector store goes here
+    embed_and_store(chunk)        # or skip this loop: pass sinks=[chunk_index] (next section)
 ```
 
 Swap the parser, chunker, or blob store by passing a different component — no
@@ -258,3 +284,33 @@ Tests mirror the package layout. `tests/contract_checks.py` holds the
 behavioral contract every new `Parser` must pass — call
 `assert_parser_contract(...)` from your parser's tests and you inherit the
 guarantees the rest of the pipeline relies on.
+
+## Roadmap
+
+Shipped (0.1 → 0.7): ingestion (streaming parse + OCR routing) · chunking ·
+enrichment · embedding (dense; the sparse-encoder contract, concrete encoders
+to follow) · storage (vector + lexical + blob) ·
+retrieval & the composition algebra (`ChunkIndex`, fusion, multi-query, HyDE) ·
+refinement chain · generation with citations.
+
+Next:
+
+- **Evaluation & auto-tuning (0.8):** IR metrics, a Ragas-based evaluator, a
+  search space over component configs, grid/random tuners, and a trial
+  leaderboard with marginal analysis — *this is the "finds the best combination
+  for your dataset" story, and it is not built yet.*
+- **Serializable pipelines:** components already `describe()` themselves; a
+  YAML/JSON pipeline loader is planned so a whole pipeline becomes data.
+- More component implementations per stage (the proof that swapping works).
+
+## Contributing
+
+Contributions are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup,
+the hermetic-vs-integration test split, the contract-check requirement, and the
+Definition of Done. Please also read the
+[Code of Conduct](CODE_OF_CONDUCT.md). For security issues, see
+[SECURITY.md](SECURITY.md).
+
+## License
+
+[Apache License 2.0](LICENSE) — Copyright 2026 Mohamed Elamine Bentarzi.

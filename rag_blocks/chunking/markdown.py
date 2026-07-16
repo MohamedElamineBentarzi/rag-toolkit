@@ -12,7 +12,7 @@ document with no headings yields a single span covering the whole thing. The
 base Template Method then skips any whitespace-only section without disturbing
 index contiguity.
 
-Deliberately simple for v0.2: no secondary size cap on a very long section yet
+Deliberately simple: no secondary size cap on a very long section yet
 (a `max_chars` split is an easy, non-breaking add later). Structure first.
 """
 
