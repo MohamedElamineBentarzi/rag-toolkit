@@ -90,9 +90,11 @@ class TraceEvent:
     string — means a hook can aggregate it however it likes.
     """
 
-    stage: str                 # "parse" | "store_raw" | "store_parsed" | "chunk"
-    source_uri: str
-    duration_ms: float
+    #: Write path: "parse" | "store_raw" | "store_parsed" | "chunk" | "enrich".
+    #: Read path: "retrieve" | "refine" | "generate".
+    stage: str
+    source_uri: str            # the query text on read-path events
+    duration_ms: float         # this stage's OWN cost, never a nested total
     detail: dict = field(default_factory=dict)
 
 
@@ -103,6 +105,40 @@ TraceHook = Callable[[TraceEvent], None]
 
 def _noop_trace(event: TraceEvent) -> None:  # Null Object
     pass
+
+
+def _measured(stream: Iterator[Chunk], meter: list[float]) -> Iterator[Chunk]:
+    """Yield from `stream`, accumulating into `meter` the ms spent producing it.
+
+    Two things this exists to get right, both consequences of the chunk/enrich
+    chain being lazy:
+
+    - **Timing the call measures nothing.** `enricher.enrich(stream, doc)` only
+      *builds* a generator; the work happens later, on `next()`. So the clock
+      has to ride the stream.
+    - **Wall-clocking the whole drain over-bills.** A generator suspends at
+      every yield, so elapsed time from first `next()` to exhaustion also
+      includes whatever the *consumer* did in between — here, writing batches
+      to every sink. Only time spent inside `next()` belongs to this stage.
+
+    Meters nest: this wrapper's `next()` pulls through every layer below it, so
+    its total includes theirs. A layer's own cost is its meter minus the one
+    beneath — subtracted once, where the events are emitted.
+    """
+    total = 0.0
+    try:
+        while True:
+            start = time.perf_counter()
+            try:
+                item = next(stream)
+            except StopIteration:
+                return
+            total += _ms(start)
+            yield item
+    finally:
+        # `finally`, so a consumer that abandons the stream early still gets
+        # the cost of what it did consume attributed rather than dropped.
+        meter.append(total)
 
 
 #: Canonical extension per known format — derived from the *detected* format,
@@ -223,21 +259,43 @@ class IndexingPipeline:
         )
 
     def _chunk(self, source: Source, doc: Document) -> Iterator[Chunk]:
-        start = time.perf_counter()
         count = 0
         # Chunk → enrich chain → out. Each enricher wraps the previous stream
         # (Iterator → Iterator) and sees the parent document; it may augment
         # chunk text or add synthetic chunks. An empty chain is just the chunker.
-        stream: Iterator[Chunk] = self.chunker.chunk(doc)
-        for enricher in self.enrich:
-            stream = enricher.enrich(stream, doc)
+        #
+        # One meter per layer (see `_measured`): the tuner treats "which
+        # enrichers" as a search dimension, so "the enrich chain cost 4 s" is
+        # useless — it needs to know WHICH enricher spent it.
+        meters: list[list[float]] = [[] for _ in range(1 + len(self.enrich))]
+        stream: Iterator[Chunk] = _measured(self.chunker.chunk(doc), meters[0])
+        for enricher, meter in zip(self.enrich, meters[1:]):
+            stream = _measured(enricher.enrich(stream, doc), meter)
+
         for chunk in stream:
             count += 1
             yield chunk
+
+        # Every meter has recorded by now: each layer's `finally` runs as it
+        # exhausts, innermost first. An abandoned stream is the exception —
+        # hence the empty-cell fallback rather than an index error.
+        totals = [meter[0] if meter else 0.0 for meter in meters]
+        # "chunk" is the CHUNKER's own cost, not the chain's: enrichment is
+        # reported per enricher below, so summing stages never double-counts.
+        # Identical to the old total whenever the chain is empty.
         self.trace(TraceEvent(
-            "chunk", source.uri, _ms(start),
+            "chunk", source.uri, totals[0],
             {"doc_id": doc.id, "chunks": count},
         ))
+        previous = totals[0]
+        for enricher, total in zip(self.enrich, totals[1:]):
+            # max(): meters nest so this is non-negative by construction, but
+            # a clock that jitters must never emit a negative cost.
+            self.trace(TraceEvent(
+                "enrich", source.uri, max(total - previous, 0.0),
+                {"doc_id": doc.id, "enricher": enricher.name},
+            ))
+            previous = total
 
     # -- truth store ---------------------------------------------------------
 
@@ -383,6 +441,8 @@ class RagPipeline:
             batch_size=batch_size, trace=trace,
         )
         self.query_pipeline = QueryPipeline(retriever, refine, fetch_k, trace)
+        # Held here too: generation happens in `ask`, outside either sub-pipeline.
+        self.trace = trace
 
     @classmethod
     def dense(
@@ -410,7 +470,20 @@ class RagPipeline:
         """Retrieve → refine → generate a cited Answer for `question`."""
         query = question if isinstance(question, Query) else Query(text=question)
         context = self.query_pipeline.query(query, k)
-        return self.generator.generate(query, context)
+        start = time.perf_counter()
+        answer = self.generator.generate(query, context)
+        # The one stage that was invisible to tracing, and the expensive one:
+        # generation is where the tokens are spent. `usage` rides along so a
+        # cost collector never has to hold the Answer to price a trial.
+        self.trace(TraceEvent(
+            "generate", query.text, _ms(start),
+            {
+                "generator": self.generator.name,
+                "context_chunks": len(context),
+                "usage": dict(answer.usage),
+            },
+        ))
+        return answer
 
     # -- citation → source resolution ----------------------------------------
 

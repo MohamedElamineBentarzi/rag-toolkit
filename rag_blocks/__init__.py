@@ -61,11 +61,15 @@ from .enrichment import (
 )
 from .evaluation import (
     AnswerMatchEvaluator,
+    CostCollector,
     EvalOutcome,
     EvalSample,
     Evaluator,
+    Leaderboard,
     MetricReport,
     RetrievalEvaluator,
+    Trial,
+    TrialLog,
 )
 from .generation import AnthropicGenerator, ExtractiveGenerator, Generator
 from .retrieval import (
@@ -186,6 +190,10 @@ __all__ = [
     "MetricReport",
     "RetrievalEvaluator",
     "AnswerMatchEvaluator",
+    "Trial",
+    "TrialLog",
+    "CostCollector",
+    "Leaderboard",
     "IndexingPipeline",
     "QueryPipeline",
     "RagPipeline",

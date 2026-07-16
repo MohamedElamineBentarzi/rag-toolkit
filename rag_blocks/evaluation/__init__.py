@@ -12,7 +12,11 @@ a sample (`ragas`, later).
 
 from .answer_match import AnswerMatchEvaluator, exact_match, token_f1
 from .base import EvalOutcome, EvalSample, Evaluator, MetricReport
+from .cost import CostCollector
 from .ir_metrics import RetrievalEvaluator, ndcg_at_k, recall_at_k, reciprocal_rank
+from .leaderboard import Leaderboard
+from .trial import Trial, trial_id_for
+from .trial_log import TrialLog
 
 __all__ = [
     "Evaluator",
@@ -26,4 +30,9 @@ __all__ = [
     "ndcg_at_k",
     "token_f1",
     "exact_match",
+    "Trial",
+    "trial_id_for",
+    "TrialLog",
+    "CostCollector",
+    "Leaderboard",
 ]
