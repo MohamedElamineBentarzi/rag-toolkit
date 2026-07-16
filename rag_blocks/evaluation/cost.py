@@ -31,7 +31,19 @@ from typing import Mapping, Optional
 # isinstance).
 from ..pipeline import TraceEvent
 
-__all__ = ["CostCollector"]
+__all__ = ["CostCollector", "INDEX_STAGES", "QUERY_STAGES"]
+
+#: Write-path stages. Their cost is one-time per corpus, and — this is the
+#: point — **cache-confounded**: across a tuning run the first trial pays for
+#: the parse and every later trial with the same parser fingerprint reads the
+#: blob cache instead. Comparing two trials' index latency compares who ran
+#: first as much as what they configured.
+INDEX_STAGES = frozenset({"parse", "store_raw", "store_parsed", "chunk", "enrich"})
+
+#: Read-path stages: paid per question, forever, in production. Nothing in the
+#: tuner's caching touches them, so this is the number that compares cleanly
+#: across trials AND means something to a user waiting for an answer.
+QUERY_STAGES = frozenset({"retrieve", "refine", "generate"})
 
 
 class CostCollector:
@@ -81,16 +93,30 @@ class CostCollector:
     # -- the trial's fields --------------------------------------------------
 
     def cost(self) -> dict[str, float]:
-        """`Trial.cost`: total latency, per-stage latency, tokens, and — only
-        if priced — api_usd.
+        """`Trial.cost`: latency (total, split, and per stage), tokens, and —
+        only if priced — api_usd.
 
         Per-stage keys ride along because "which stage spent it" is the whole
         question the leaderboard's marginal analysis asks. They sum to
         `latency_ms` exactly: every event reports its OWN cost (pipeline.py's
         `_measured` makes sure nested stages don't double-count).
+
+        **`index_ms` / `query_ms` exist because `latency_ms` alone lies.**
+        Across a tuning run the parse cache makes the first trial pay and every
+        later one free-ride, so total latency partly measures *running order*.
+        The split quarantines that: `index_ms` is the cache-confounded,
+        one-time half (read it next to `cache_hits`), and `query_ms` is the
+        clean half — unaffected by the tuner's caching, paid per question in
+        production, and therefore the number to rank on.
         """
         out: dict[str, float] = {
             "latency_ms": sum(self._latency_ms.values()),
+            "index_ms": sum(
+                ms for stage, ms in self._latency_ms.items() if stage in INDEX_STAGES
+            ),
+            "query_ms": sum(
+                ms for stage, ms in self._latency_ms.items() if stage in QUERY_STAGES
+            ),
             **{f"latency_ms.{stage}": ms for stage, ms in sorted(self._latency_ms.items())},
             **{key: value for key, value in sorted(self._usage.items())},
         }

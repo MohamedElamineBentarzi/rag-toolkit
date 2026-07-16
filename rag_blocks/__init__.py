@@ -61,15 +61,22 @@ from .enrichment import (
 )
 from .evaluation import (
     AnswerMatchEvaluator,
+    Choice,
     CostCollector,
     EvalOutcome,
     EvalSample,
     Evaluator,
+    GridTuner,
     Leaderboard,
     MetricReport,
+    PipelineBuilder,
+    RandomTuner,
     RetrievalEvaluator,
+    SearchSpace,
     Trial,
     TrialLog,
+    Tuner,
+    choice,
 )
 from .generation import AnthropicGenerator, ExtractiveGenerator, Generator
 from .retrieval import (
@@ -194,6 +201,13 @@ __all__ = [
     "TrialLog",
     "CostCollector",
     "Leaderboard",
+    "SearchSpace",
+    "Choice",
+    "choice",
+    "PipelineBuilder",
+    "Tuner",
+    "GridTuner",
+    "RandomTuner",
     "IndexingPipeline",
     "QueryPipeline",
     "RagPipeline",

@@ -79,13 +79,21 @@ class Leaderboard:
         winners = self.top(1, by=by)
         return winners[0] if winners else None
 
-    def to_table(self, *, by: str, n: int = 10, cost: str = "latency_ms") -> str:
+    def to_table(self, *, by: str, n: int = 10, cost: str = "query_ms") -> str:
         """A plain-text table: rank, id, the metric, and what it cost.
 
         Quality and cost sit side by side and always will. A ranking that shows
         only the score invites picking a winner that is 0.3% better and 40x
         more expensive — showing the price at the moment of choice is the
         library's actual argument.
+
+        `cost` defaults to **query_ms**, not total latency, and that default is
+        load-bearing: within a tuning run the parse cache makes an early trial
+        pay for work a later one inherits, so `latency_ms` partly ranks by
+        running order. `query_ms` is untouched by that, and is what a user
+        waiting on an answer actually experiences. Ask for `index_ms` when you
+        want the one-time build cost — and read it beside `cache_hits`, or it
+        will flatter whichever trial happened to run second.
         """
         # An empty board is a legitimate state (nothing has run yet), and
         # rendering is a display action — it must not explode. `top()` still

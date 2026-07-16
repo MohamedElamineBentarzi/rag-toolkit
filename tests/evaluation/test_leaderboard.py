@@ -16,7 +16,7 @@ def trial(tid, ndcg=None, latency=100.0, **metrics) -> Trial:
         pipeline_spec={"chunker": {"name": tid}},
         fingerprints={},
         metrics=scored,
-        cost={"latency_ms": latency},
+        cost={"latency_ms": latency, "query_ms": latency, "index_ms": latency * 2},
     )
 
 
@@ -104,10 +104,19 @@ def test_the_table_shows_quality_and_cost_side_by_side():
         trial("pricey", ndcg=0.81, latency=2000.0),
     ).to_table(by="ndcg@10")
 
-    assert "ndcg@10" in table and "latency_ms" in table
+    assert "ndcg@10" in table and "query_ms" in table
     lines = table.strip().split("\n")
     assert "pricey" in lines[2] and "2000.0" in lines[2]  # winner, and its price
     assert "cheap" in lines[3] and "50.0" in lines[3]
+
+
+def test_the_table_defaults_to_the_cost_that_compares_cleanly():
+    # query_ms, not latency_ms: within a tuning run the parse cache makes an
+    # early trial pay for work a later one inherits, so total latency partly
+    # ranks by running order. This default is load-bearing, not cosmetic.
+    table = board(trial("a", ndcg=0.5)).to_table(by="ndcg@10")
+    assert "query_ms" in table
+    assert "latency_ms" not in table
 
 
 def test_an_unmeasured_cost_prints_as_a_dash_not_zero():
