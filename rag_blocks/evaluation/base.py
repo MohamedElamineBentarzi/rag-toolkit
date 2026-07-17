@@ -41,15 +41,34 @@ class EvalSample:
     sample is read by every trial in a tuning run, and a mutation halfway
     through would silently invalidate the comparison.
 
-    Both label fields are optional and independent — a dataset labeled only
+    Every label field is optional and independent — a dataset labeled only
     with `relevant_chunk_ids` supports retrieval metrics, one labeled only
     with `reference_answer` supports generation metrics, and either is a
     legitimate way to work. An evaluator that needs a label it wasn't given
     skips that sample rather than inventing one.
+
+    **Choosing a retrieval label** — the choice is granularity, and it decides
+    what you are allowed to tune:
+
+    - `relevant_chunk_ids` is exact, and **chunker-locked**. `Chunk.id` is
+      `{doc_id}:{index}`, so the same id denotes a *different passage* under a
+      different chunker — and may not exist at all under a coarser one. Labels
+      like these are only valid while the chunker is held fixed. Nothing can
+      detect the mismatch for you: the score stays plausible and becomes wrong.
+    - `relevant_doc_ids` is coarser and **survives any chunking**, because a
+      document's identity is its content hash, not a cut decision. It is what
+      makes chunk size tunable — the one knob ARCHITECTURE §6.4 leads with
+      ("chunk size 512→1024 costs −0.04 recall@10") — and it is what the
+      committed baseline benchmark uses.
+
+    Given both, chunk-level wins: it is the more specific claim.
     """
 
     question: str
     relevant_chunk_ids: Optional[tuple[str, ...]] = None
+    #: Document-level ground truth (`Document.id` / `Source.content_hash()`).
+    #: Chunker-independent — see the note above.
+    relevant_doc_ids: Optional[tuple[str, ...]] = None
     reference_answer: Optional[str] = None
     filters: Optional[dict] = None
     metadata: dict = field(default_factory=dict)

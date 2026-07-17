@@ -7,6 +7,60 @@ expected between minor versions.
 
 ## [Unreleased]
 
+### Added — evaluation & tuning (the v0.8 milestone, AGENTS.md §7.3)
+
+Given a labeled dataset, find the best pipeline configuration, with every trial
+logged and explainable — quality **and** cost.
+
+- **`Evaluator` kind** (`stage: "retrieval" | "generation"`). Evaluators score
+  outcomes the pipeline already produced; they never run it (DR-0002).
+  Implementations: `ir` (recall@k, MRR, nDCG — pure math), `answer-match`
+  (token-F1 + exact match, vendor-free), `ragas` (LLM judge, extra `[ragas]`).
+- **`SearchSpace` / `choice()`** — declarative, plain data. A list is a grid
+  axis; a tuple is one value.
+- **`Tuner` kind** — `grid` and `random`. `run()` is a Template Method over
+  `iter_candidates()`; two-phase screening runs the free evaluators on every
+  candidate and the judge on the top-N only (default 5).
+- **`PipelineBuilder`** — spec → live `RagPipeline`. The tuner depends on
+  `PipelineFactory = Callable[[dict], RagPipeline]`, so it is replaceable.
+- **`Trial` / `TrialLog`** — JSONL is the truth, SQLite a rebuildable index.
+  A log line reconstructs what ran; secrets were already redacted by
+  `describe()`.
+- **`CostCollector`** — a `TraceHook`, so cost attribution needed no pipeline
+  instrumentation. Splits `index_ms` (one-time, cache-confounded) from
+  `query_ms` (per question, clean).
+- **`Leaderboard`** — ranking plus per-stage **marginal analysis**: "averaged
+  over everything else, this choice was worth +X quality for +Y cost".
+- **`JudgeCache`** — verdicts memoized by (question, answer, judge-model).
+- **`benchmarks/baseline/`** — a hermetic regression baseline (4 documents, 28
+  questions) that every later milestone reruns with one component swapped.
+- **`EvaluationError`**; `assert_evaluator_contract`; the `ragas` extra.
+- **`RagPipeline.ask_with_context()`** — returns the answer and the context it
+  was built from, with the pipeline's tracing intact. `ask()` delegates to it.
+- **`ChunkIndex.encoders()`** — representation name → component. `describe()`
+  reports fingerprints, which cannot tell a trial log which embedder ran.
+- **`EvalSample.relevant_doc_ids`** — document-level ground truth. `Chunk.id` is
+  `{doc_id}:{index}`, so a chunk-level label denotes a *different passage* under
+  a different chunker; doc-level labels are what make chunk size tunable.
+
+### Changed
+- **`RagPipeline.ask()` now emits a `"generate"` TraceEvent** carrying `usage`.
+  It was the only untraced stage, and the expensive one.
+- **Each enricher now emits its own `"enrich"` TraceEvent**, and `"chunk"`
+  reports the *chunker's own* cost rather than the whole chain's, so summing
+  stages never double-counts. Identical when the enrich chain is empty.
+- **`ARCHITECTURE.md` §3.9's `Evaluator` signature was amended** from
+  `evaluate(dataset, pipeline)` to `evaluate(outcomes)` (DR-0002).
+
+### Fixed
+- `SearchSpace.__repr__` used a non-ASCII arrow, so `print(repr(space))` raised
+  `UnicodeEncodeError` on a cp1252 (Windows) console.
+
+### Known gaps
+- Enricher **token** usage is uncaptured: `Enricher.enrich` returns an
+  `Iterator[Chunk]` with no usage channel, so reporting it means changing a
+  shipped stage's contract. Per-enricher latency *is* captured.
+
 ## [0.7.0] — 2026-07-16 — OSS readiness: rename, packaging, hardening
 
 First public release. The library is renamed and the repository is brought up to

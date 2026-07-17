@@ -36,8 +36,12 @@ minio = ["minio>=7.2"]
 sentence-transformers = ["sentence-transformers>=3.0"]
 qdrant = ["qdrant-client>=1.10"]
 anthropic = ["anthropic>=0.40"]
+# The LLM-judged evaluator. Everything else in the evaluation suite — IR
+# metrics, answer matching, tuners, the trial log (stdlib sqlite3) — is
+# dependency-free by design, so a judge is the only part you must opt into.
+ragas = ["ragas>=0.2"]
 all = [
-    "rag-blocks[docling,mistral,google,minio,sentence-transformers,qdrant,anthropic]"
+    "rag-blocks[docling,mistral,google,minio,sentence-transformers,qdrant,anthropic,ragas]"
 ]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11"]
 

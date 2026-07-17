@@ -30,12 +30,13 @@ from ..core.component import Component
 from ..core.contracts import Query, Source
 from ..core.errors import ConfigError, RagBlocksError
 from ..core.registry import registry
+from ..indexing.chunk_index import ChunkIndex
 from ..pipeline import RagPipeline
 from .base import EvalOutcome, EvalSample, Evaluator
 from .builder import PipelineBuilder, PipelineFactory
 from .cost import CostCollector
 from .leaderboard import Leaderboard
-from .space import SearchSpace
+from .space import STAGE_KINDS, SearchSpace
 from .trial import Trial, trial_id_for
 from .trial_log import TrialLog
 
@@ -317,6 +318,13 @@ def _describe(rag: RagPipeline) -> dict:
     This is what makes a trial reproducible from its log line alone, and it
     reports what was *resolved*, not what was asked for: a spec that omits the
     retriever still records the one the pipeline derived.
+
+    The index's representations are unpacked into their own stage keys
+    (`embedder`, `sparse`, `lexical`). `ChunkIndex.describe()` reports them as
+    fingerprints — right for identity, useless for reading: a hash cannot tell
+    you the run used `hashing(dimensions=128)`. Without this a trial could not
+    be reconstructed from its log line, and the leaderboard could not group by
+    the embedder the tuner was searching over.
     """
     described: dict[str, Any] = {
         "parser": rag.indexing.parser.describe(),
@@ -324,13 +332,41 @@ def _describe(rag: RagPipeline) -> dict:
         "retriever": rag.retriever.describe(),
         "generator": rag.generator.describe(),
     }
-    if rag.chunk_index is not None:
-        described["index"] = rag.chunk_index.describe()
-    if rag.indexing.enrich:
-        described["enrich"] = [e.describe() for e in rag.indexing.enrich]
-    if rag.query_pipeline.refine:
-        described["refine"] = [r.describe() for r in rag.query_pipeline.refine]
+    index = rag.chunk_index
+    if index is not None:
+        described["index"] = index.describe()
+        described.update(_representations(index))
+    # Chain stages are recorded even when EMPTY. The empty chain is a choice —
+    # "no reranker" is the baseline a cross-encoder has to beat — so omitting
+    # it would hide the option the comparison exists to make. It would also
+    # make the leaderboard's marginal for that stage compare the refiners
+    # against nothing, silently.
+    described["enrich"] = [e.describe() for e in rag.indexing.enrich]
+    described["refine"] = [r.describe() for r in rag.query_pipeline.refine]
     return described
+
+
+def _representations(index: ChunkIndex) -> dict[str, Any]:
+    """The index's representation components, keyed by SearchSpace stage name.
+
+    Grouped by each component's own `kind` and mapped back through
+    `STAGE_KINDS`, so this never has to know how a `ChunkIndex` stores its
+    representations — it asks.
+
+    Single-representation mounts (the common case) report one describe; a
+    multi-representation mount reports a list, so both forms of progressive
+    disclosure survive into the log.
+    """
+    kind_to_stage = {kind: stage for stage, kind in STAGE_KINDS.items()}
+    grouped: dict[str, list[Any]] = {}
+    for component in index.encoders().values():
+        stage = kind_to_stage.get(component.kind)
+        if stage is not None:
+            grouped.setdefault(stage, []).append(component.describe())
+    return {
+        stage: described[0] if len(described) == 1 else described
+        for stage, described in grouped.items()
+    }
 
 
 def _fingerprints(rag: RagPipeline) -> dict[str, str]:

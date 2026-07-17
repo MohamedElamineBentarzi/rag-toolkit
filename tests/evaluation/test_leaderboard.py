@@ -126,3 +126,124 @@ def test_an_unmeasured_cost_prints_as_a_dash_not_zero():
 
 def test_an_empty_board_says_so_rather_than_raising():
     assert "no trials" in Leaderboard([]).to_table(by="anything")
+
+
+# -- marginal analysis: the deep-insights deliverable --------------------
+
+
+def spec_trial(tid, *, chunker, ndcg, query_ms=100.0, refine=None) -> Trial:
+    spec = {"chunker": {"name": chunker, "config": {}}}
+    if refine is not None:
+        spec["refine"] = [{"name": r, "config": {}} for r in refine]
+    return Trial(
+        trial_id=tid,
+        pipeline_spec=spec,
+        fingerprints={},
+        metrics={"ndcg@10": ndcg},
+        cost={"query_ms": query_ms},
+    )
+
+
+def test_marginal_reports_what_a_choice_was_worth_against_the_mean():
+    # "Averaged over everything else, markdown-aware adds +0.2 nDCG."
+    # means: fixed -> 0.4, markdown -> 0.8, overall 0.6.
+    board = Leaderboard([
+        spec_trial("a", chunker="fixed", ndcg=0.3),
+        spec_trial("b", chunker="fixed", ndcg=0.5),
+        spec_trial("c", chunker="markdown-aware", ndcg=0.7),
+        spec_trial("d", chunker="markdown-aware", ndcg=0.9),
+    ])
+    marginals = {m.option: m for m in board.marginal("chunker", by="ndcg@10")}
+
+    assert marginals["markdown-aware"].quality == pytest.approx(0.2)
+    assert marginals["fixed"].quality == pytest.approx(-0.2)
+    assert marginals["markdown-aware"].trials == 2
+
+
+def test_marginal_reports_the_cost_of_the_quality():
+    # The whole sentence: "+0.07 nDCG for +180 ms/query". Quality without its
+    # price is how you ship a winner that's 0.3% better and 40x dearer.
+    board = Leaderboard([
+        spec_trial("a", chunker="cheap", ndcg=0.5, query_ms=10.0),
+        spec_trial("b", chunker="pricey", ndcg=0.6, query_ms=210.0),
+    ])
+    marginals = {m.option: m for m in board.marginal("chunker", by="ndcg@10")}
+
+    assert marginals["pricey"].quality == pytest.approx(0.05)
+    assert marginals["pricey"].cost == pytest.approx(100.0)  # vs the 110ms mean
+    assert marginals["cheap"].cost == pytest.approx(-100.0)
+
+
+def test_marginals_are_ranked_best_first():
+    board = Leaderboard([
+        spec_trial("a", chunker="bad", ndcg=0.1),
+        spec_trial("b", chunker="good", ndcg=0.9),
+    ])
+    assert [m.option for m in board.marginal("chunker", by="ndcg@10")] == ["good", "bad"]
+
+
+def test_config_is_part_of_the_option_because_it_is_what_was_compared():
+    trials = [
+        Trial(
+            trial_id=str(size),
+            pipeline_spec={"chunker": {"name": "fixed", "config": {"chunk_chars": size}}},
+            fingerprints={},
+            metrics={"ndcg@10": ndcg},
+            cost={},
+        )
+        for size, ndcg in [(512, 0.9), (1024, 0.5)]
+    ]
+    marginals = {m.option: m for m in Leaderboard(trials).marginal("chunker", by="ndcg@10")}
+    assert "fixed(chunk_chars=512)" in marginals
+    assert marginals["fixed(chunk_chars=512)"].quality == pytest.approx(0.2)
+
+
+def test_a_chain_is_labeled_by_its_links_and_the_empty_chain_has_a_name():
+    # "none" is the baseline a cross-encoder must beat to earn its 180ms — it
+    # needs a name to be compared against.
+    board = Leaderboard([
+        spec_trial("a", chunker="fixed", ndcg=0.5, refine=[]),
+        spec_trial("b", chunker="fixed", ndcg=0.7, refine=["keyword", "score-threshold"]),
+    ])
+    options = {m.option for m in board.marginal("refine", by="ndcg@10")}
+    assert options == {"none", "keyword+score-threshold"}
+
+
+def test_trials_that_never_scored_the_metric_are_excluded():
+    board = Leaderboard([
+        spec_trial("a", chunker="fixed", ndcg=0.5),
+        Trial(trial_id="b", pipeline_spec={"chunker": {"name": "fixed", "config": {}}},
+              fingerprints={}, metrics={}, cost={}),  # a failed trial
+    ])
+    assert board.marginal("chunker", by="ndcg@10")[0].trials == 1
+
+
+def test_a_single_trial_option_is_reported_with_its_n():
+    # n=1 means "averaged over everything else" averaged over one thing —
+    # reported, but `trials` is there to be read before believing it.
+    board = Leaderboard([spec_trial("a", chunker="fixed", ndcg=0.5)])
+    assert board.marginal("chunker", by="ndcg@10")[0].trials == 1
+
+
+def test_an_unknown_metric_fails_fast_with_what_exists():
+    with pytest.raises(ConfigError, match="available"):
+        Leaderboard([spec_trial("a", chunker="fixed", ndcg=0.5)]).marginal(
+            "chunker", by="nope"
+        )
+
+
+def test_a_stage_no_trial_recorded_lists_the_stages_that_exist():
+    with pytest.raises(ConfigError, match="recorded stages"):
+        Leaderboard([spec_trial("a", chunker="fixed", ndcg=0.5)]).marginal(
+            "generator", by="ndcg@10"
+        )
+
+
+def test_a_marginal_prints_the_sentence_the_milestone_promised():
+    board = Leaderboard([
+        spec_trial("a", chunker="fixed", ndcg=0.5, query_ms=10.0),
+        spec_trial("b", chunker="markdown-aware", ndcg=0.7, query_ms=200.0),
+    ])
+    line = str(board.marginal("chunker", by="ndcg@10")[0])
+    assert "markdown-aware" in line and "+0.1000" in line
+    line.encode("ascii")  # printed output must survive a cp1252 console

@@ -5,22 +5,46 @@ The trial log holds the facts; this ranks and prints them. Keeping it a view
 filtered SQL query, or trials still in memory mid-run, without any of them
 knowing about it.
 
-Per-stage **marginal analysis** — the "deep insights" deliverable (§7.3), where
-"averaged over everything else, the cross-encoder adds +0.07 nDCG for +180
-ms/query" comes from — arrives in v0.8 PR 4. It needs the search-space
-vocabulary (PR 3) to know what a "dimension" is, and it falls out of this same
-trial structure for free, which is the whole reason the structure looks like
-this.
+Per-stage **marginal analysis** is the "deep insights" deliverable (§7.3):
+*"averaged over everything else, the cross-encoder adds +0.07 nDCG for +180
+ms/query."* A winner tells you what to ship; a marginal tells you why, and
+which parts of the pipeline are earning their keep. It needs no machinery
+beyond grouping the trial log — which is the whole reason `Trial` stores a
+per-stage `pipeline_spec` rather than a flattened label.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional, Sequence
 
 from ..core.errors import ConfigError
 from .trial import Trial
 
-__all__ = ["Leaderboard"]
+__all__ = ["Leaderboard", "Marginal"]
+
+
+@dataclass(frozen=True)
+class Marginal:
+    """What one choice at one stage is worth, averaged over everything else.
+
+    `quality` and `cost` are *deltas against the overall mean*, not absolutes:
+    the question a marginal answers is "what did picking this change?", and an
+    absolute mean can't answer it.
+    """
+
+    stage: str
+    option: str
+    trials: int
+    quality: float
+    cost: float
+
+    def __str__(self) -> str:
+        # ASCII: this gets printed, and Windows stdout is cp1252.
+        return (
+            f"{self.stage}={self.option}: {self.quality:+.4f} quality "
+            f"for {self.cost:+.1f} cost (n={self.trials})"
+        )
 
 
 class Leaderboard:
@@ -79,6 +103,59 @@ class Leaderboard:
         winners = self.top(1, by=by)
         return winners[0] if winners else None
 
+    def marginal(
+        self, stage: str, *, by: str, cost: str = "query_ms"
+    ) -> list[Marginal]:
+        """What each option at `stage` was worth, averaged over all else.
+
+        The "deep insights" deliverable (§7.3): *"averaged over every other
+        choice, the cross-encoder refiner adds +0.07 nDCG@10 for +180
+        ms/query."* That sentence is what a tuning run is actually for — a
+        winner tells you what to ship, a marginal tells you **why**, and which
+        parts of your pipeline are carrying their weight.
+
+        It needs no new machinery: group the trials by the option they used at
+        one stage, average, subtract the overall mean. That it falls out for
+        free is not luck — it is why `Trial` stores a full per-stage
+        `pipeline_spec` instead of a flattened label.
+
+        Best first by quality delta. Options tried by only one trial are
+        reported too: with n=1 the "average over everything else" is an average
+        over one thing, so read `trials` before believing a number.
+        """
+        scored = [t for t in self.trials if by in t.metrics]
+        if not scored:
+            raise ConfigError(
+                f"no trial reported {by!r}; available: {self.metrics()}"
+            )
+
+        groups: dict[str, list[Trial]] = {}
+        for trial in scored:
+            option = _option_at(trial, stage)
+            if option is not None:
+                groups.setdefault(option, []).append(trial)
+        if not groups:
+            raise ConfigError(
+                f"no trial recorded a {stage!r} stage; recorded stages: "
+                f"{sorted({s for t in scored for s in t.pipeline_spec})}"
+            )
+
+        overall_quality = _mean([t.metrics[by] for t in scored])
+        overall_cost = _mean([t.cost.get(cost, 0.0) for t in scored])
+
+        marginals = [
+            Marginal(
+                stage=stage,
+                option=option,
+                trials=len(group),
+                quality=_mean([t.metrics[by] for t in group]) - overall_quality,
+                cost=_mean([t.cost.get(cost, 0.0) for t in group]) - overall_cost,
+            )
+            for option, group in groups.items()
+        ]
+        marginals.sort(key=lambda m: (-m.quality, m.option))
+        return marginals
+
     def to_table(self, *, by: str, n: int = 10, cost: str = "query_ms") -> str:
         """A plain-text table: rank, id, the metric, and what it cost.
 
@@ -113,3 +190,33 @@ class Leaderboard:
                 f"{trial.metrics[by]:>12.4f}  {shown:>12}"
             )
         return "\n".join(lines)
+
+
+def _mean(values: Sequence[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _option_at(trial: Trial, stage: str) -> Optional[str]:
+    """How a trial spelled its choice at one stage, as a groupable label.
+
+    A chain becomes "a+b" (and the empty chain "none" — the Null Object needs a
+    name to be compared against, since "no reranker" is the baseline a
+    cross-encoder has to beat). Config is folded in, so `fixed(chunk_chars=512)`
+    and `fixed(chunk_chars=1024)` are different options: they are what the tuner
+    was actually asked to compare.
+    """
+    entry = trial.pipeline_spec.get(stage)
+    if entry is None:
+        return None
+    if isinstance(entry, list):
+        return "+".join(_label(link) for link in entry) if entry else "none"
+    return _label(entry)
+
+
+def _label(described: dict) -> str:
+    name = described.get("name", "?")
+    config = described.get("config") or {}
+    if not config:
+        return str(name)
+    inner = ",".join(f"{k}={v}" for k, v in sorted(config.items()))
+    return f"{name}({inner})"

@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "The committed baseline. Every later milestone reruns THIS file with one",
+    "component swapped; the measured delta is that release's headline number.",
+    "JSON, not YAML: rag_blocks.core is stdlib-only and a config format must",
+    "not be the thing that drags in a dependency.",
+    "",
+    "A list is a grid axis; a tuple/scalar is one value. JSON has no tuples,",
+    "so a literal-sequence parameter cannot be expressed here — use the Python",
+    "API for those (see run.py)."
+  ],
+  "corpus": "corpus",
+  "dataset": "qa.jsonl",
+  "k": 5,
+  "screen_by": "ndcg@5",
+  "finalists": 3,
+  "evaluators": {
+    "k_values": [1, 3, 5]
+  },
+  "space": {
+    "chunker": [
+      {"name": "fixed", "params": {"chunk_chars": [400, 800, 1600], "overlap_chars": [0, 100]}},
+      {"name": "markdown-aware", "params": {}}
+    ],
+    "embedder": [
+      {"name": "hashing", "params": {"dimensions": [128, 512]}}
+    ],
+    "lexical": [
+      {"name": "bm25", "params": {}}
+    ],
+    "refine": [
+      [],
+      [{"name": "keyword", "params": {}}]
+    ]
+  }
+}

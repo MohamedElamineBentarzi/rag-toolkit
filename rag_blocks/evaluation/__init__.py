@@ -15,7 +15,9 @@ from .base import EvalOutcome, EvalSample, Evaluator, MetricReport
 from .builder import PipelineBuilder, PipelineFactory
 from .cost import CostCollector
 from .ir_metrics import RetrievalEvaluator, ndcg_at_k, recall_at_k, reciprocal_rank
-from .leaderboard import Leaderboard
+from .judge_cache import JudgeCache
+from .leaderboard import Leaderboard, Marginal
+from .ragas_evaluator import RagasEvaluator
 from .space import Choice, SearchSpace, choice
 from .trial import Trial, trial_id_for
 from .trial_log import TrialLog
@@ -28,6 +30,9 @@ __all__ = [
     "MetricReport",
     "RetrievalEvaluator",
     "AnswerMatchEvaluator",
+    "RagasEvaluator",
+    "JudgeCache",
+    "Marginal",
     "recall_at_k",
     "reciprocal_rank",
     "ndcg_at_k",

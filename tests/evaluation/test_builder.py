@@ -125,10 +125,34 @@ def test_a_retriever_without_an_index_says_what_to_do():
         PipelineBuilder().build({"retriever": {"name": "index"}})
 
 
-def test_a_retriever_that_composes_other_retrievers_is_refused_clearly():
-    # FusionRetriever takes sub-retrievers, not an index — there's no sensible
-    # flat spelling, so say so instead of leaking a TypeError.
-    with pytest.raises(ConfigError, match="does not take an index"):
+def test_an_index_backed_refiner_also_gets_the_index():
+    # Regression: the index was injected only into RETRIEVERS, which made
+    # NeighborExpander — a refiner that reads the index — unbuildable from a
+    # spec. The benchmark reported 14 failed trials instead of a search.
+    rag = PipelineBuilder().build(
+        {**DENSE, "refine": [{"name": "neighbor-expander", "params": {"window": 2}}]}
+    )
+    expander = rag.query_pipeline.refine[0]
+    assert expander.index is rag.chunk_index
+    assert expander.config.window == 2
+
+
+def test_a_refiner_that_needs_no_index_is_built_plainly():
+    rag = PipelineBuilder().build(
+        {**DENSE, "refine": [{"name": "score-threshold", "params": {"min_score": 0.2}}]}
+    )
+    assert rag.query_pipeline.refine[0].config.min_score == 0.2
+
+
+def test_an_index_backed_refiner_without_an_index_says_what_to_do():
+    with pytest.raises(ConfigError, match="needs an index"):
+        PipelineBuilder().build({"refine": [{"name": "neighbor-expander"}]})
+
+
+def test_a_component_composed_of_other_components_raises_its_own_error():
+    # FusionRetriever takes retrievers, not an index; there's no flat spelling
+    # for that, so it says what it wanted rather than leaking a TypeError.
+    with pytest.raises(ConfigError, match="retrievers"):
         PipelineBuilder().build({**DENSE, "retriever": {"name": "fusion"}})
 
 

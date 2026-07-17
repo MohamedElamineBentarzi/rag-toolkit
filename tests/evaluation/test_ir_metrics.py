@@ -180,6 +180,86 @@ def test_per_sample_detail_is_aligned_with_the_outcomes():
     assert report.per_sample[1]["recall@1"] == 0.0
 
 
+# -- document-level labels: what makes chunk size tunable ----------------
+
+
+def doc_outcome(retrieved_doc_ids, relevant_doc_ids, question="q") -> EvalOutcome:
+    return EvalOutcome(
+        sample=EvalSample(question=question, relevant_doc_ids=tuple(relevant_doc_ids)),
+        retrieved=tuple(
+            ScoredChunk(
+                chunk=Chunk(id=f"{doc}:{i}", doc_id=doc, text="t", index=i),
+                score=1.0 / (i + 1),
+            )
+            for i, doc in enumerate(retrieved_doc_ids)
+        ),
+    )
+
+
+def test_doc_labels_score_at_document_granularity():
+    report = RetrievalEvaluator(k_values=(1,)).evaluate(
+        [doc_outcome(["docA", "docB"], ["docA"])]
+    )
+    assert report.metrics["recall@1"] == 1.0
+    assert report.metrics["mrr"] == 1.0
+
+
+def test_a_document_is_ranked_by_its_best_chunk_not_counted_per_chunk():
+    # Three chunks of docB above docA: docB is ONE hit at rank 1, so docA sits
+    # at rank 2. Counting per chunk would put docA at rank 4 and quietly
+    # reward a chunker for cutting small — the bias that makes chunk-level
+    # labels useless for tuning chunk size.
+    report = RetrievalEvaluator(k_values=(2,)).evaluate(
+        [doc_outcome(["docB", "docB", "docB", "docA"], ["docA"])]
+    )
+    assert report.metrics["mrr"] == pytest.approx(0.5)  # rank 2, not rank 4
+    assert report.metrics["recall@2"] == 1.0
+
+
+def test_doc_recall_counts_distinct_documents():
+    report = RetrievalEvaluator(k_values=(3,)).evaluate(
+        [doc_outcome(["docA", "docA", "docC"], ["docA", "docB"])]
+    )
+    assert report.metrics["recall@3"] == pytest.approx(0.5)  # found A, missed B
+
+
+def test_chunk_labels_win_when_a_sample_carries_both():
+    # The more specific claim wins.
+    outcome_ = EvalOutcome(
+        sample=EvalSample(
+            question="q",
+            relevant_chunk_ids=("d:1",),
+            relevant_doc_ids=("other-doc",),
+        ),
+        retrieved=(
+            ScoredChunk(chunk=Chunk(id="d:1", doc_id="d", text="t", index=1), score=1.0),
+        ),
+    )
+    assert RetrievalEvaluator(k_values=(1,)).evaluate([outcome_]).metrics["recall@1"] == 1.0
+
+
+def test_doc_labels_survive_a_chunker_change_where_chunk_ids_do_not():
+    # The whole point. Same document, two chunkings: chunk ids differ, doc id
+    # does not, so the label still means what it meant.
+    coarse = doc_outcome(["docA"], ["docA"])
+    fine = EvalOutcome(
+        sample=EvalSample(question="q", relevant_doc_ids=("docA",)),
+        retrieved=tuple(
+            ScoredChunk(
+                chunk=Chunk(id=f"docA:{i}", doc_id="docA", text="t", index=i), score=1.0
+            )
+            for i in range(5)  # a finer chunker: different ids, same document
+        ),
+    )
+    ir = RetrievalEvaluator(k_values=(1,))
+    assert ir.evaluate([coarse]).metrics == ir.evaluate([fine]).metrics
+
+
+def test_a_sample_with_no_retrieval_label_at_all_is_skipped():
+    bare = EvalOutcome(sample=EvalSample(question="q", reference_answer="a"))
+    assert RetrievalEvaluator().evaluate([bare]).metrics == {}
+
+
 # -- fail fast at construction -------------------------------------------
 
 

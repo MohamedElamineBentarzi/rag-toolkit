@@ -369,10 +369,26 @@ addition for large batch runs.
 
 ---
 
-## 6. Evaluation & auto-tuning suite (design)
+## 6. Evaluation & auto-tuning suite — implemented (v0.8)
 
 The differentiating feature: **given a labeled dataset, find the best
 pipeline configuration, with every trial logged and explainable.**
+
+Built per this section, with five refinements recorded in
+[DR-0002](docs/decisions/DR-0002-evaluator-contract.md) and
+[DR-0003](docs/decisions/DR-0003-tuning-and-caching.md): evaluators score data
+instead of driving pipelines (§3.9 was amended); `Tuner.run()` is a Template
+Method over `iter_candidates`; **no stage-output cache was built** because §6.2's
+formula is already materialized by the blob parse cache and `CachingEmbedder`
+(the tuner contributes *enumeration order* — measured: 12 combinations, 1
+parse); `cost` splits cache-confounded `index_ms` from clean `query_ms`, and
+`api_usd` is never guessed; and `EvalSample` grew `relevant_doc_ids`, without
+which §6.4's own headline example (tuning chunk size) is unmeasurable — a
+chunk-level label silently denotes a different passage under a different
+chunker.
+
+User-facing guide: [`docs/guide/11-evaluation-and-tuning.md`](docs/guide/11-evaluation-and-tuning.md).
+The committed regression baseline lives in `benchmarks/baseline/`.
 
 ### 6.1 Vocabulary
 

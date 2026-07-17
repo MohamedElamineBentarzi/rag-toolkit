@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Optional, Sequence
 
 from ..core.errors import ConfigError
 from ..core.registry import registry
@@ -101,11 +101,21 @@ def ndcg_at_k(
 class RetrievalEvaluator(Evaluator):
     """The free screening evaluator: recall@k, MRR, nDCG@k over a ranking.
 
-    Scores only samples that carry `relevant_chunk_ids`; an unlabeled sample
-    gets an empty per-sample dict and contributes to no average. Consequence
-    worth knowing: aggregates are means over the *labeled* subset, so a
-    dataset where two rows of thirty carry labels reports a confident-looking
-    number computed from two rows. `per_sample` is what reveals that.
+    Scores at whichever granularity the sample is labeled at (see
+    `EvalSample`): `relevant_chunk_ids` ranks chunks, `relevant_doc_ids` ranks
+    the documents those chunks came from. The metrics are the same maths either
+    way — only the identity being ranked changes, which is why doc-level
+    support cost one helper and no new metric.
+
+    Document ranking deduplicates: three chunks from one document are one hit
+    at that document's best rank. Otherwise a chunker that emits small chunks
+    would "find" the same document repeatedly and score higher for it — the
+    exact bias that makes chunk-level labels useless for tuning chunk size.
+
+    Unlabeled samples get an empty per-sample dict and contribute to no
+    average. Consequence worth knowing: aggregates are means over the *labeled*
+    subset, so a dataset where two rows of thirty carry labels reports a
+    confident-looking number computed from two rows. `per_sample` reveals that.
     """
 
     name = "ir"
@@ -134,11 +144,11 @@ class RetrievalEvaluator(Evaluator):
     def evaluate(self, outcomes: Sequence[EvalOutcome]) -> MetricReport:
         per_sample: list[dict[str, float]] = []
         for outcome in outcomes:
-            relevant = outcome.sample.relevant_chunk_ids
-            if not relevant:
+            ranked = _ranked_ids(outcome)
+            if ranked is None:
                 per_sample.append({})  # unlabeled: no score, not a zero
                 continue
-            retrieved_ids = [sc.chunk.id for sc in outcome.retrieved]
+            retrieved_ids, relevant = ranked
             scores: dict[str, float] = {"mrr": reciprocal_rank(retrieved_ids, relevant)}
             for k in self._k_values:
                 scores[f"recall@{k}"] = recall_at_k(retrieved_ids, relevant, k)
@@ -148,3 +158,35 @@ class RetrievalEvaluator(Evaluator):
         return MetricReport(
             metrics=self._aggregate(per_sample), per_sample=tuple(per_sample)
         )
+
+
+def _ranked_ids(
+    outcome: EvalOutcome,
+) -> Optional[tuple[list[str], tuple[str, ...]]]:
+    """(retrieved ids in rank order, relevant ids) at the sample's granularity.
+
+    Returns None when the sample carries no retrieval label at all. Chunk-level
+    wins when both are given: it is the more specific claim.
+    """
+    sample = outcome.sample
+    if sample.relevant_chunk_ids:
+        return [sc.chunk.id for sc in outcome.retrieved], sample.relevant_chunk_ids
+    if sample.relevant_doc_ids:
+        return _dedupe([sc.chunk.doc_id for sc in outcome.retrieved]), sample.relevant_doc_ids
+    return None
+
+
+def _dedupe(ids: Sequence[str]) -> list[str]:
+    """First occurrence wins, order preserved.
+
+    A document's rank is its BEST chunk's rank. Counting it once per chunk
+    would reward a chunker for cutting small — it would fill the top-k with
+    one document and call that recall.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for identifier in ids:
+        if identifier not in seen:
+            seen.add(identifier)
+            out.append(identifier)
+    return out

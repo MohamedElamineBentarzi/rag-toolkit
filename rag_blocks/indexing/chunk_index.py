@@ -105,6 +105,21 @@ class ChunkIndex(Component):
         """The named ways a chunk in this corpus is searchable, stable order."""
         return list(self._names)
 
+    def encoders(self) -> dict[str, Component]:
+        """Representation name → the component that encodes it, stable order.
+
+        `describe()` reports these as *fingerprints*, which is right for
+        identity and useless for reading: a hash cannot tell a trial log which
+        embedder ran, or how it was configured. This is the read accessor for
+        that question — group by `component.kind` to tell a dense embedder from
+        a lexical index. It exists so the evaluation suite never has to reach
+        into this object's internals to record what it ran.
+        """
+        found: dict[str, Component] = {**self._dense, **self._sparse}
+        if self._lexical is not None:
+            found[LEXICAL_NAME] = self._lexical
+        return {name: found[name] for name in self._names}
+
     def _build_specs(self) -> list[VectorSpec]:
         specs: list[VectorSpec] = []
         for name, emb in self._dense.items():

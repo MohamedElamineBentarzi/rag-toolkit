@@ -24,6 +24,7 @@ libraries.
 | [08 · Pipelines](08-pipelines.md) | Wiring it all with `RagPipeline`, keeping originals, caching, and download links. |
 | [09 · Add your own part](09-extending-and-testing.md) | Write and register a custom part in five steps, and prove it with the contract tests. |
 | [10 · Recipes](10-recipes.md) | Ten complete setups you can copy — from a 30-second test to hybrid, tuned production. |
+| [11 · Evaluation & tuning](11-evaluation-and-tuning.md) | Measuring whether your pipeline is any good, searching for a better one, and the ways a number can lie to you. |
 
 ## Pick your path
 
@@ -33,6 +34,8 @@ libraries.
   [01](01-getting-started.md), [05](05-representations-and-storage.md),
   [06](06-retrieval-and-refinement.md), [08](08-pipelines.md),
   [10](10-recipes.md).
+- **"Is my pipeline any good, and which part is worth its cost?"** →
+  [Part 11](11-evaluation-and-tuning.md).
 - **"I want to add my own piece."** → [Part 09](09-extending-and-testing.md).
 - **"I want to understand the whole thing."** → read it in order.
 

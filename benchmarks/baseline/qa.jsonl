@@ -1,0 +1,28 @@
+{"question": "What was revenue in the third quarter?", "relevant_docs": ["quarterly-report.md"], "reference_answer": "Revenue for the third quarter reached 4.2 million euros."}
+{"question": "Which region grew fastest?", "relevant_docs": ["quarterly-report.md"], "reference_answer": "The German market grew fastest at nineteen percent."}
+{"question": "How much did cloud infrastructure costs increase?", "relevant_docs": ["quarterly-report.md"], "reference_answer": "Cloud infrastructure was up 340 thousand euros year on year."}
+{"question": "What is the full-year revenue guidance?", "relevant_docs": ["quarterly-report.md"], "reference_answer": "Between 16.5 and 17.2 million euros."}
+{"question": "How concentrated is subscription income among the largest customers?", "relevant_docs": ["quarterly-report.md"], "reference_answer": "The five largest customers represent thirty-one percent of subscription revenue."}
+{"question": "Why did the Nordic region contract?", "relevant_docs": ["quarterly-report.md"], "reference_answer": "The loss of a single large account in Sweden, rather than a broader trend."}
+{"question": "How long does the final internship last?", "relevant_docs": ["parcours-siia.md"], "reference_answer": "A minimum of sixteen weeks."}
+{"question": "How many pages should the internship report be?", "relevant_docs": ["parcours-siia.md"], "reference_answer": "Between forty and sixty pages."}
+{"question": "When do applications close?", "relevant_docs": ["parcours-siia.md"], "reference_answer": "Applications close on 15 March each year."}
+{"question": "How many credits are needed to graduate?", "relevant_docs": ["parcours-siia.md"], "reference_answer": "One hundred and twenty credits."}
+{"question": "How many electives do students choose?", "relevant_docs": ["parcours-siia.md"], "reference_answer": "Three electives from a list of eleven."}
+{"question": "How is the internship graded?", "relevant_docs": ["parcours-siia.md"], "reference_answer": "On the report, the defence, and the host supervisor's assessment, weighted 40/40/20."}
+{"question": "Can a student retake a module they failed?", "relevant_docs": ["parcours-siia.md"], "reference_answer": "A student who fails a single module may resit it once, in September."}
+{"question": "What must candidates from outside the European Union supply?", "relevant_docs": ["parcours-siia.md"], "reference_answer": "A certified translation of their transcripts."}
+{"question": "What is the pallet capacity of the Lyon facility?", "relevant_docs": ["logistics-manual.md"], "reference_answer": "A nominal capacity of eleven thousand pallet positions."}
+{"question": "Which orders ship the same day?", "relevant_docs": ["logistics-manual.md"], "reference_answer": "Orders received before 14:00 ship the same day."}
+{"question": "How often are picking waves released?", "relevant_docs": ["logistics-manual.md"], "reference_answer": "Every ninety minutes."}
+{"question": "What triggers a hold on an inbound pallet?", "relevant_docs": ["logistics-manual.md"], "reference_answer": "A discrepancy of more than two percent by unit count."}
+{"question": "What is the shrinkage allowance?", "relevant_docs": ["logistics-manual.md"], "reference_answer": "Capped at 0.4 percent of throughput."}
+{"question": "What temperature is the storage area kept at?", "relevant_docs": ["logistics-manual.md"], "reference_answer": "Between fifteen and twenty-two degrees."}
+{"question": "How are returned goods handled?", "relevant_docs": ["logistics-manual.md"], "reference_answer": "Inspected within two working days; resaleable items rejoin stock, damaged items are written off."}
+{"question": "How often are application credentials rotated?", "relevant_docs": ["security-policy.md"], "reference_answer": "Automatically every thirty days."}
+{"question": "How long are customer records retained?", "relevant_docs": ["security-policy.md"], "reference_answer": "Seven years after the end of the contractual relationship."}
+{"question": "When must affected customers be notified of an incident?", "relevant_docs": ["security-policy.md"], "reference_answer": "Within seventy-two hours of confirmation, for high or critical incidents."}
+{"question": "How quickly must an exposed credential be rotated?", "relevant_docs": ["security-policy.md"], "reference_answer": "Within one hour of the report."}
+{"question": "How long are operational logs kept?", "relevant_docs": ["security-policy.md"], "reference_answer": "Eighteen months."}
+{"question": "How often is access reviewed?", "relevant_docs": ["security-policy.md"], "reference_answer": "Quarterly."}
+{"question": "What is required before a vendor gets production access?", "relevant_docs": ["security-policy.md"], "reference_answer": "A current review, covering subprocessors, breach history, and data location."}

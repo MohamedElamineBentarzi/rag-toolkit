@@ -358,7 +358,7 @@ payload so query time never touches the blob store; re-embedding with a new
 model reads markdown from the blob store and never re-parses. Trial logs are
 NOT blobs — they go to JSONL + SQLite.
 
-### 7.3 Evaluation & tuning *(v0.8 — the next milestone, NOT yet coded)*
+### 7.3 Evaluation & tuning *(implemented in v0.8 — DR-0002, DR-0003)*
 
 `Evaluator` kind with `stage: "retrieval" | "generation"`. Two families by
 cost: classic IR metrics (recall@k, MRR, nDCG — pure math, no LLM) and
@@ -380,6 +380,46 @@ timestamps → JSONL + SQLite. Leaderboard computes **per-stage marginal
 analysis** ("averaged over all else, the cross-encoder refiner adds +0.07 nDCG
 for +180 ms/query") — quality AND cost attribution is the "deep insights"
 deliverable.
+
+**As built** — five refinements, each with its reasoning in a DR; read those
+before changing any of it:
+
+1. **Evaluators score data, they never run pipelines** (DR-0002):
+   `evaluate(outcomes) -> MetricReport`. This *contradicts* ARCHITECTURE §3.9's
+   original `evaluate(dataset, pipeline)`, which was amended — a
+   pipeline-driving evaluator reimplements the run loop per implementation and
+   depends backward on the composition root. The loop lives in `Tuner.run`.
+2. **`Tuner.run()` is a Template Method** over one primitive,
+   `iter_candidates(space)` — the `parse/iter_pages` shape again. Two-phase
+   screening, cost, logging and error isolation live once in the base.
+3. **No stage-output cache was built** (DR-0003 §2). The key formula above is
+   already materialized by the blob parse cache (§7.2) and `CachingEmbedder`;
+   a second implementation of it would drift. The tuner's contribution is
+   **enumeration order** — `SearchSpace` varies the earliest stage slowest, so
+   prefix-sharing trials inherit a warm cache. Measured on the committed
+   benchmark: **12 combinations, 1 parse.** `STAGE_KINDS`' declaration order is
+   load-bearing; sorting it alphabetically re-parses on nearly every trial.
+4. **`cost` splits `index_ms` from `query_ms`** (DR-0003 §3). Total latency is
+   cache-confounded inside a run — the first trial pays for the parse, so
+   "cheaper" can mean "ran second". `query_ms` is the clean number and what the
+   leaderboard ranks on. **`api_usd` is never guessed**: no price table ships,
+   and an unpriced run has *no* `api_usd` key rather than `0.0`.
+5. **`EvalSample.relevant_doc_ids`** exists beside `relevant_chunk_ids` because
+   `Chunk.id` is `{doc_id}:{index}` — a chunk-level label denotes a *different
+   passage* under a different chunker, silently. Doc-level labels are what make
+   chunk size tunable at all (§6.4's own headline example), and what
+   `benchmarks/baseline/` uses.
+
+`PipelineBuilder` is the one new abstraction (spec → live `RagPipeline`),
+needed because `ChunkIndex` is wired from live backends and `IndexRetriever`
+refuses to be built by name alone. It is wiring, not a Strategy: the tuner
+depends on `PipelineFactory = Callable[[dict], RagPipeline]`, never on the
+class.
+
+**Known gap:** enricher LLM token usage is uncaptured — `Enricher.enrich`
+returns an `Iterator[Chunk]` with no usage channel, so reporting it means
+changing a shipped stage's contract and earns its own DR. Per-enricher
+*latency* is captured.
 
 ### 7.4 Secrets policy (applies to every adapter you write)
 
@@ -549,18 +589,26 @@ collapsed into the composition axis (`index`/`hybrid`/`fusion`/`multi-query`/
 `hyde`) and reranking dissolved into the `refiner` chain; `CachingEmbedder`;
 `sparse_encoder` interface.
 
-**Known gaps within the shipped surface:** no concrete `SparseEncoder`
-implementation yet (the contract exists; encoders are fast-follow) and no
-`chonkie` chunker adapter yet (still wanted per §7.1).
+**Shipped (v0.8):** evaluation & tuning per §7.3 — `Evaluator` kind (`ir`,
+`answer-match`, `ragas`), `SearchSpace`/`choice`, `Tuner` (`grid`, `random`),
+`PipelineBuilder`, `Trial`/`TrialLog` (JSONL + SQLite), `CostCollector`,
+`Leaderboard` with marginal analysis, and the committed regression baseline in
+`benchmarks/baseline/`.
 
-**Next: v0.8 evaluation & tuning per §7.3** (IR metrics + `RagasEvaluator`,
-SearchSpace, grid/random tuners, trial log, leaderboard w/ marginal
-analysis). Beyond v0.8, the versioned unlock plan (streaming generation seam,
-late chunking, agentic composites, multi-vector/MaxSim, ColPali projection)
-lives in `tump_docs/RAG-SOTA-ROADMAP.md` and its companions; those documents
-graduate into `docs/` as each milestone starts. Each milestone ships **at
-least two interchangeable implementations per stage** — swapping is the proof
-the library works.
+**Known gaps within the shipped surface:** no concrete `SparseEncoder`
+implementation yet (the contract exists; encoders are fast-follow), no
+`chonkie` chunker adapter yet (still wanted per §7.1), and no enricher token
+usage (§7.3).
+
+**Next: v0.9, the streaming generation seam** (`iter_complete` as an optional
+`Generator` capability). The versioned unlock plan (streaming, late chunking,
+agentic composites, multi-vector/MaxSim, ColPali projection) lives in
+`tump_docs/RAG-SOTA-ROADMAP.md` and its companions; those documents graduate
+into `docs/` as each milestone starts. Each milestone ships **at least two
+interchangeable implementations per stage** — swapping is the proof the library
+works — and, since v0.8 exists, **a benchmark rerun proving its marginal win**
+(roadmap rule 2). `benchmarks/baseline/` is the artifact to rerun; the honest
+number, favorable or not, goes in the release notes.
 
 ## 12. When uncertain, decide like this
 

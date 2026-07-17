@@ -139,6 +139,32 @@ def test_a_trial_records_what_actually_ran():
     assert trial.metadata["phase"] == 1
 
 
+def test_the_empty_chain_is_recorded_so_it_can_be_compared_against():
+    # Regression: chain stages were only recorded when non-empty, so the "no
+    # refiner" baseline vanished from the trial — and the leaderboard's
+    # marginal for `refine` silently compared the refiners against nothing.
+    # The Null Object is a choice; it has to be visible as one.
+    sp = SearchSpace(
+        embedder=[choice("hashing", dimensions=64)],
+        refine=[[], [choice("score-threshold", min_score=0.0)]],
+    )
+    board = GridTuner().run(sp, dataset(), source(), evaluators=screeners())
+
+    assert all("refine" in t.pipeline_spec for t in board.trials)
+    options = {m.option for m in board.marginal("refine", by="ndcg@3")}
+    assert options == {"none", "score-threshold(min_score=0.0)"}
+
+
+def test_the_index_representations_are_recorded_by_name_not_just_fingerprint():
+    # Regression: ChunkIndex.describe() reports representations as opaque
+    # fingerprints, so a trial could not say WHICH embedder ran — breaking
+    # both reproducibility and marginal(). It asks the index now.
+    board = run(GridTuner())
+    spec = board.top(1, by="ndcg@3")[0].pipeline_spec
+    assert spec["embedder"]["name"] == "hashing"
+    assert spec["embedder"]["config"]["dimensions"] == 64
+
+
 def test_trials_carry_retrieval_metrics_and_cost():
     board = run(GridTuner())
     trial = board.top(1, by="ndcg@3")[0]
