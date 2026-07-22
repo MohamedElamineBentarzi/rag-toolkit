@@ -72,7 +72,7 @@ export const useStudio = create<StudioState>((set, get) => {
       const node: BlockNode = {
         id: nextId(kind, name),
         type: "block",
-        position: position ?? { x: 120 + nodes.length * 30, y: 120 + nodes.length * 20 },
+        position: position ?? tile(nodes.length),
         data: { kind, name, params },
       };
 
@@ -143,11 +143,17 @@ export const useStudio = create<StudioState>((set, get) => {
   };
 });
 
+// Click-to-add tiles nodes into a loose grid so they never stack; a dropped
+// node uses the drop point instead.
+function tile(i: number): { x: number; y: number } {
+  return { x: 60 + (i % 4) * 260, y: 70 + Math.floor(i / 4) * 168 };
+}
+
 function makeIndexNode(order: number): BlockNode {
   return {
     id: nextId("index", "index"),
     type: "block",
-    position: { x: 120 + order * 30, y: 260 },
+    position: tile(order),
     data: { kind: "index", name: "ChunkIndex", params: {}, synthetic: true },
   };
 }

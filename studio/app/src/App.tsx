@@ -23,7 +23,7 @@ import { loadManifest } from "./manifest/load";
 import { compileSpec } from "./spec/compile";
 import { validateSpec } from "./spec/validateSpec";
 import { importSpec } from "./spec/importSpec";
-import { theme } from "./theme/tokens";
+import { stageAccent } from "./theme/tokens";
 
 // Defined once, outside the component: React Flow warns (and rerenders) if
 // nodeTypes is a fresh object each render.
@@ -94,9 +94,21 @@ function Studio() {
           proOptions={{ hideAttribution: true }}
           defaultEdgeOptions={{ animated: true }}
         >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color={theme.grid} />
-          <Controls />
-          <MiniMap pannable zoomable maskColor="#0008" nodeColor={theme.border} />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={22}
+            size={1}
+            color="rgba(255,255,255,0.06)"
+          />
+          <Controls showInteractive={false} position="top-left" />
+          <MiniMap
+            pannable
+            zoomable
+            nodeStrokeWidth={0}
+            nodeColor={(n) => stageAccent[(n.data as { kind: string }).kind] ?? "#5b5b74"}
+            maskColor="rgba(8,8,14,0.6)"
+            style={{ background: "transparent" }}
+          />
         </ReactFlow>
         <Problems />
       </div>
@@ -149,7 +161,9 @@ function Toolbar({ onImported }: { onImported: () => void }) {
   return (
     <div className="toolbar">
       <div className="title">
-        <span className="brand">rag-blocks</span> Studio
+        <span className="dot" />
+        <span className="brand">rag-blocks</span>
+        <span className="sub">studio</span>
       </div>
       <button onClick={deleteSelected}>Delete</button>
       <button onClick={() => { if (confirm("Clear the canvas?")) clear(); }}>Clear</button>

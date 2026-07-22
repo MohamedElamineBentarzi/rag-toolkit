@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useStudio } from "./store";
 import { inputPorts, outputPort, type Port } from "./ports";
@@ -20,8 +21,11 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
   const accent = stageAccent[data.kind] ?? "#8b8b9e";
 
   return (
-    <div className={`blocknode ${selected ? "selected" : ""} ${data.synthetic ? "synthetic" : ""}`}>
-      <div className="accent" style={{ background: accent }} />
+    <div
+      className={`blocknode ${selected ? "selected" : ""} ${data.synthetic ? "synthetic" : ""}`}
+      style={{ ["--stage" as string]: accent } as CSSProperties}
+    >
+      <div className="accent" />
       <div className="body">
         <div className="kind">{data.kind}</div>
         <div className="name">{data.name}</div>
@@ -73,7 +77,7 @@ function TypedHandle(props: {
       />
       <span
         className="port-label"
-        style={{ top: `calc(${top} - 7px)`, [dir === "target" ? "left" : "right"]: 14 }}
+        style={{ top, [dir === "target" ? "left" : "right"]: 16 }}
       >
         {port.type}
       </span>

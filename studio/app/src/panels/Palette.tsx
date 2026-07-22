@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useStudio } from "../graph/store";
 import { stageAccent } from "../theme/tokens";
 import type { ComponentSpec } from "../manifest/types";
@@ -37,7 +38,7 @@ function PaletteBlock({ comp, onAdd }: { comp: ComponentSpec; onAdd: () => void 
   return (
     <div
       className={`block ${disabled ? "disabled" : ""}`}
-      style={{ borderLeftColor: stageAccent[comp.kind] ?? "#8b8b9e" }}
+      style={{ ["--stage" as string]: stageAccent[comp.kind] ?? "#8b8b9e" } as CSSProperties}
       draggable={!disabled}
       onClick={disabled ? undefined : onAdd}
       onDragStart={(e) => {

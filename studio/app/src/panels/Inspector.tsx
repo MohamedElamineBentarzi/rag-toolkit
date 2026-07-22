@@ -44,11 +44,9 @@ export function Inspector() {
           Info
         </button>
       </div>
-      <div style={{ marginBottom: 6 }}>
-        <div className="blocknode-title" style={{ fontWeight: 600, fontSize: 15 }}>
-          {comp.name}
-        </div>
-        <div style={{ color: "var(--text-dim)", fontSize: 11 }}>
+      <div className="head">
+        <div className="cname">{comp.name}</div>
+        <div className="meta">
           {comp.kind} · v{comp.version}
         </div>
       </div>
