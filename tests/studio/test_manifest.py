@@ -6,30 +6,16 @@ typed, and round-trips back to a real class". These tests guard that.
 """
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
 import pytest
 
 from rag_blocks.core.registry import registry
 from rag_blocks.evaluation.space import CHAIN_STAGES, STAGE_KINDS
-
-_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _load_build_manifest():
-    """Import the dev-tool script by path (studio/ is not a package)."""
-    path = _ROOT / "studio" / "tools" / "build_manifest.py"
-    spec = importlib.util.spec_from_file_location("studio_build_manifest", path)
-    assert spec and spec.loader
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+from rag_blocks.studio.manifest import build_manifest
 
 
 @pytest.fixture(scope="module")
 def manifest():
-    return _load_build_manifest().build_manifest()
+    return build_manifest()
 
 
 def _by_name(manifest, name):

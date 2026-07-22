@@ -45,6 +45,11 @@ all = [
 ]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11"]
 
+[project.scripts]
+# `rag-blocks studio` launches the optional visual pipeline builder from the
+# bundled static build. Stdlib-only launcher; needs no Node at runtime.
+rag-blocks = "rag_blocks.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/MohamedElamineBentarzi/rag-blocks"
 Repository = "https://github.com/MohamedElamineBentarzi/rag-blocks"
@@ -54,6 +59,12 @@ Issues = "https://github.com/MohamedElamineBentarzi/rag-blocks/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["rag_blocks"]
+# Studio's built static app is placed in rag_blocks/studio/_dist by the release
+# step (`npm run build` -> copy), then shipped as package data so `rag-blocks
+# studio` works from a plain `pip install`. The dir is gitignored (a build
+# artifact), so `artifacts` is what forces it into the wheel when present; when
+# absent (a normal dev build) nothing is included and the CLI says how to build.
+artifacts = ["rag_blocks/studio/_dist/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
