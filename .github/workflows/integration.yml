@@ -18,13 +18,10 @@ on:
 jobs:
   integration:
     runs-on: ubuntu-latest
-    services:
-      minio:
-        image: bitnami/minio:latest
-        ports: ["9000:9000"]
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
+    # MinIO is started via `docker run` in a step (below) rather than as a
+    # service container: the official image needs `server /data` as its command,
+    # which GitHub Actions service containers cannot supply. (bitnami/minio auto-
+    # started the server, but Bitnami deprecated its public catalog in 2025.)
     env:
       MINIO_ENDPOINT: localhost:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -38,6 +35,12 @@ jobs:
           python-version: "3.12"
       - name: Install (all extras + dev)
         run: pip install -e ".[all,dev]"
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            quay.io/minio/minio server /data
       - name: Wait for MinIO
         run: |
           for i in $(seq 1 30); do
