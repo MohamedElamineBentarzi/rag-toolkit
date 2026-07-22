@@ -44,6 +44,7 @@ and this class is only its default.
 from __future__ import annotations
 
 import inspect
+from collections.abc import Mapping
 from typing import Any, Callable, Optional, Sequence
 
 from ..core.errors import ConfigError
@@ -55,7 +56,7 @@ from ..storage.memory_store import MemoryVectorStore
 from ..storage.vector_store import VectorStore
 from .space import CHAIN_STAGES, STAGE_KINDS
 
-__all__ = ["PipelineBuilder", "PipelineFactory"]
+__all__ = ["PipelineBuilder", "PipelineFactory", "validate_spec"]
 
 #: What the tuner actually depends on: spec → pipeline. `PipelineBuilder` is
 #: the default implementation, never a requirement (Dependency Inversion — the
@@ -92,12 +93,11 @@ class PipelineBuilder:
         representations (one ⇒ IndexRetriever, several ⇒ HybridRetriever). The
         tuner therefore searches over what you asked it to and nothing else.
         """
-        unknown = set(spec) - set(STAGE_KINDS)
-        if unknown:
-            raise ConfigError(
-                f"PipelineBuilder: unknown stage(s) {sorted(unknown)}; "
-                f"known: {sorted(STAGE_KINDS)}"
-            )
+        # Structure first, one shared gate (`validate_spec`, also what save/load
+        # leans on) — known stages, well-formed entries. Semantics (does this
+        # component exist, does it accept these params) stay below, where the
+        # registry and the Config can say precisely what they wanted.
+        validate_spec(spec)
 
         # The index and its representations. A fresh store per trial: sharing
         # one would let an earlier trial's chunks answer a later trial's query.
@@ -191,10 +191,62 @@ def _takes_index(cls: type) -> bool:
         return False
 
 
-def _unpack(stage: str, entry: dict) -> tuple[str, dict]:
-    if not isinstance(entry, dict) or "name" not in entry:
+def validate_spec(spec: Mapping[str, Any]) -> None:
+    """Structural check that `spec` is a pipeline recipe, *without building it*.
+
+    The cheap, dependency-free gate `save_spec`/`load_spec` and `build` all
+    share: every key names a known stage, and every entry is shaped
+    `{"name": str, "params": {...}}` — a chain stage (`refine`, `enrich`)
+    holding a *list* of those, the empty list included. It stops at structure
+    on purpose: an unknown component *name* or a bad *param* is not caught here
+    but at `build`, which actually instantiates and lets the registry and the
+    component's Config report exactly what they wanted. Structure here (no
+    imports, no instantiation); semantics there.
+
+    Raises `ConfigError` at the first problem — the house rule is fail fast at
+    the place the mistake was made, so a spec that could never name a pipeline
+    never silently reaches (or leaves) disk.
+    """
+    if not isinstance(spec, Mapping):
         raise ConfigError(
-            f"PipelineBuilder: {stage} entry must be "
-            f'{{"name": ..., "params": {{...}}}}, got {entry!r}'
+            f"spec must be a mapping of stage -> entry, got {type(spec).__name__}"
         )
+    unknown = set(spec) - set(STAGE_KINDS)
+    if unknown:
+        raise ConfigError(
+            f"unknown stage(s) {sorted(unknown)}; known: {sorted(STAGE_KINDS)}"
+        )
+    for stage, value in spec.items():
+        if stage in CHAIN_STAGES:
+            # A chain stage's value is a list of entries (`[]` = no stage).
+            if not isinstance(value, (list, tuple)):
+                raise ConfigError(
+                    f"{stage}= must be a chain (a list of entries, [] for none), "
+                    f"got {type(value).__name__}"
+                )
+            for entry in value:
+                _validate_entry(stage, entry)
+        else:
+            _validate_entry(stage, value)
+
+
+def _validate_entry(stage: str, entry: Any) -> None:
+    """One `{"name": ..., "params": {...}}` entry, checked for shape only."""
+    if not isinstance(entry, Mapping) or "name" not in entry:
+        raise ConfigError(
+            f'{stage} entry must be {{"name": ..., "params": {{...}}}}, '
+            f"got {entry!r}"
+        )
+    params = entry.get("params")
+    # A present-but-non-mapping params would otherwise explode later as a
+    # cryptic `dict()` error; name it where the mistake is.
+    if params is not None and not isinstance(params, Mapping):
+        raise ConfigError(
+            f"{stage}={entry['name']!r}: params must be a mapping, "
+            f"got {type(params).__name__}"
+        )
+
+
+def _unpack(stage: str, entry: dict) -> tuple[str, dict]:
+    _validate_entry(stage, entry)
     return entry["name"], dict(entry.get("params") or {})

@@ -80,6 +80,9 @@ from .evaluation import (
     TrialLog,
     Tuner,
     choice,
+    load_spec,
+    save_spec,
+    validate_spec,
 )
 from .generation import AnthropicGenerator, ExtractiveGenerator, Generator
 from .retrieval import (
@@ -211,6 +214,9 @@ __all__ = [
     "Choice",
     "choice",
     "PipelineBuilder",
+    "validate_spec",
+    "save_spec",
+    "load_spec",
     "Tuner",
     "GridTuner",
     "RandomTuner",
