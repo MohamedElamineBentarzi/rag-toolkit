@@ -66,6 +66,12 @@ packages = ["rag_blocks"]
 # absent (a normal dev build) nothing is included and the CLI says how to build.
 artifacts = ["rag_blocks/studio/_dist/**"]
 
+[tool.hatch.build.targets.sdist]
+# Same artifact on the sdist: `python -m build` builds the wheel FROM the sdist,
+# so if _dist isn't in the sdist it can't reach the wheel. (gitignored, hence
+# `artifacts` rather than plain includes.)
+artifacts = ["rag_blocks/studio/_dist/**"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Default run = fast + hermetic. Integration tests (real docling/OCR stacks)
