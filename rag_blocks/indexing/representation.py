@@ -167,7 +167,7 @@ class DenseRepresentation(Representation):
     def describe(self) -> dict:
         info = super().describe()
         info["space"] = self._space
-        info["encoder"] = self._embedder.fingerprint()
+        info["encoder"] = self._embedder.describe()
         return info
 
 
@@ -217,7 +217,7 @@ class SparseRepresentation(Representation):
     def describe(self) -> dict:
         info = super().describe()
         info["space"] = self._space
-        info["encoder"] = self._encoder.fingerprint()
+        info["encoder"] = self._encoder.describe()
         return info
 
 
@@ -269,5 +269,5 @@ class LexicalRepresentation(Representation):
     def describe(self) -> dict:
         info = super().describe()
         info["space"] = self._space
-        info["backend"] = self._index.fingerprint()
+        info["encoder"] = self._index.describe()
         return info

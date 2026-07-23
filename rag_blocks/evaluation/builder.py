@@ -44,18 +44,15 @@ and this class is only its default.
 from __future__ import annotations
 
 import inspect
+import typing
 from collections.abc import Mapping
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence, cast
 
+from ..core.component import Component
 from ..core.errors import ConfigError
 from ..core.registry import registry
 from ..indexing.corpus import Corpus
-from ..indexing.representation import (
-    DenseRepresentation,
-    LexicalRepresentation,
-    Representation,
-    SparseRepresentation,
-)
+from ..indexing.representation import Representation
 from ..pipeline import RagPipeline, TraceHook, _noop_trace
 from ..storage.base import BlobStore
 from ..storage.memory_store import MemoryVectorStore
@@ -107,31 +104,20 @@ class PipelineBuilder:
 
         # The corpus and its representations. A fresh store per trial: sharing
         # one would let an earlier trial's chunks answer a later trial's query.
-        # corpus=None: these encoders are the corpus's ingredients, built before
-        # it exists. None of them takes a corpus — they are what one is made of.
-        #
-        # Interim (DR-0004): the search space still names the encoders by the
-        # keys `embedder`/`sparse`/`lexical`; here we wrap each in its
-        # `Representation` and hand the list to one `Corpus`. The nested
-        # `corpus` spec (D6) is a later step; this keeps existing specs valid.
-        dense = self._create("embedder", spec["embedder"], None) if "embedder" in spec else None
-        sparse = self._create("sparse", spec["sparse"], None) if "sparse" in spec else None
-        lexical = self._create("lexical", spec["lexical"], None) if "lexical" in spec else None
-        # The vector store the corpus persists into: a spec-named one (Qdrant,
-        # in-memory) if given, else the builder's own factory. A fresh instance
-        # per build either way (registry.create builds one), so trials never
-        # share a store — the isolation invariant holds for both paths.
+        # The vector store a spec-named one (Qdrant, in-memory) if given, else
+        # the builder's own factory — a fresh instance per build either way, so
+        # trials never share a store (the isolation invariant holds for both).
         store = (
             self._create("vector_store", spec["vector_store"], None)
             if "vector_store" in spec else self.store_factory()
         )
-        reps: list[Representation] = []
-        if dense is not None:
-            reps.append(DenseRepresentation(dense))
-        if sparse is not None:
-            reps.append(SparseRepresentation(sparse))
-        if lexical is not None:
-            reps.append(LexicalRepresentation(lexical))
+        # Representations are a generic list keyed by kind (dense/lexical/… or a
+        # plugin) — no hardcoded encoder keys (DR-0004). Each is built here, its
+        # nested encoder sub-spec resolved first, then handed to one Corpus.
+        reps: list[Representation] = [
+            self._build_representation(entry)
+            for entry in spec.get("representations", [])
+        ]
         corpus: Optional[Corpus] = Corpus(store, reps) if reps else None
 
         # The truth/parse-cache store: spec-named (MinIO, local) or the builder's.
@@ -159,6 +145,8 @@ class PipelineBuilder:
                 spec["retriever"], corpus, _completion_seam(kwargs.get("generator"))
             )
         for stage in CHAIN_STAGES:
+            if stage == "representations":
+                continue  # already built into the corpus above (not a RagPipeline arg)
             if stage in spec:
                 kwargs[stage] = self._chain(stage, spec[stage], corpus)
 
@@ -229,6 +217,46 @@ class PipelineBuilder:
             return self._compose(name, entry, inner=inner, complete=complete)
         return self._create("retriever", entry, corpus)  # base: index / hybrid
 
+    def _build_representation(self, entry: dict) -> Representation:
+        """One `Representation` from its spec entry, resolving any nested encoder
+        sub-spec into a live component first.
+
+        A representation wraps an encoder (an `Embedder`/`SparseEncoder`/
+        `LexicalIndex`), which a flat spec can't carry inline — so it arrives as
+        a nested `{"name", "params"}` sub-spec under the constructor param that
+        is Component-typed (`embedder`/`encoder`/`index`). The builder finds that
+        param *by its type* (not a hardcoded name), builds the encoder, and
+        injects it — the same nested-sub-spec seam a composite retriever uses for
+        `inner`, so a new representation kind needs no builder change (DR-0004).
+        """
+        name, params = _unpack("representations", entry)
+        cls = registry.get("representation", name)
+        wiring: dict[str, Any] = {}
+        flat: dict[str, Any] = {}
+        for pname, value in params.items():
+            kind = _encoder_kind(cls, pname)
+            if kind is None:
+                flat[pname] = value       # a plain settable param (e.g. `space`)
+                continue
+            if not isinstance(value, Mapping) or "name" not in value:
+                raise ConfigError(
+                    f"PipelineBuilder: representation={name!r}: {pname!r} must be "
+                    f"a {kind} sub-spec {{'name': ...}}, got {value!r}"
+                )
+            sub_params = dict(value.get("params") or {})
+            try:
+                wiring[pname] = registry.create(kind, value["name"], **sub_params)
+            except ConfigError as exc:
+                raise ConfigError(
+                    f"PipelineBuilder: representation={name!r}.{pname}: {exc}"
+                ) from exc
+        try:
+            return cast(Representation, cls(**wiring, **flat))
+        except ConfigError as exc:
+            raise ConfigError(
+                f"PipelineBuilder: representation={name!r}: {exc}"
+            ) from exc
+
     def _compose(self, name: str, entry: dict, **wiring: Any) -> Any:
         """Build a composite retriever from its already-built parts + its params."""
         _, params = _unpack("retriever", entry)
@@ -264,6 +292,25 @@ def _entry_list(value: Any) -> list:
             "PipelineBuilder: retriever.retrievers must be a list of retriever specs"
         )
     return list(value)
+
+
+def _encoder_kind(cls: type, pname: str) -> Optional[str]:
+    """The registry kind of a Component-typed constructor param, else None.
+
+    How the builder tells a representation's *encoder* param (`embedder: Embedder`
+    → kind ``"embedder"``) — which arrives as a nested sub-spec to resolve — from
+    a plain settable param (`space: str`). Read from the type, so a new
+    representation with a new encoder type resolves with no builder change."""
+    try:
+        hint = typing.get_type_hints(cls.__init__).get(pname)  # type: ignore[misc]
+    except Exception:
+        return None
+    if typing.get_origin(hint) is typing.Union:
+        args = [a for a in typing.get_args(hint) if a is not type(None)]
+        hint = args[0] if len(args) == 1 else hint
+    if isinstance(hint, type) and issubclass(hint, Component):
+        return getattr(hint, "kind", None)
+    return None
 
 
 def _takes_corpus(cls: type) -> bool:

@@ -24,7 +24,10 @@ from rag_blocks.evaluation import (
 # refine chain, a generator. Hashing embedder keeps it dependency-free.
 SPEC = {
     "chunker": {"name": "fixed", "params": {"chunk_chars": 512, "overlap_chars": 64}},
-    "embedder": {"name": "hashing", "params": {"dimensions": 64}},
+    "representations": [
+        {"name": "dense",
+         "params": {"embedder": {"name": "hashing", "params": {"dimensions": 64}}}}
+    ],
     "retriever": {"name": "index", "params": {"representation": "dense"}},
     "refine": [{"name": "score-threshold", "params": {"min_score": 0.1}}],
     "generator": {"name": "extractive", "params": {}},
@@ -74,7 +77,9 @@ def test_str_and_path_are_both_accepted(tmp_path):
 def test_the_empty_chain_survives_the_round_trip(tmp_path):
     # "no reranker" is a real, distinct recipe — it must not be dropped as falsy.
     path = tmp_path / "pipeline.json"
-    spec = {"embedder": {"name": "hashing"}, "refine": []}
+    spec = {"representations": [{"name": "dense",
+                                 "params": {"embedder": {"name": "hashing"}}}],
+            "refine": []}
     save_spec(spec, path)
     assert load_spec(path)["refine"] == []
 
@@ -95,8 +100,9 @@ def test_the_output_is_stable_across_key_order(tmp_path):
     # so a re-save diffs cleanly in review.
     a = tmp_path / "a.json"
     b = tmp_path / "b.json"
-    save_spec({"chunker": {"name": "fixed"}, "embedder": {"name": "hashing"}}, a)
-    save_spec({"embedder": {"name": "hashing"}, "chunker": {"name": "fixed"}}, b)
+    reps = [{"name": "dense", "params": {"embedder": {"name": "hashing"}}}]
+    save_spec({"chunker": {"name": "fixed"}, "representations": reps}, a)
+    save_spec({"representations": reps, "chunker": {"name": "fixed"}}, b)
     assert a.read_text(encoding="utf-8") == b.read_text(encoding="utf-8")
 
 
@@ -161,7 +167,7 @@ def test_validate_rejects_non_mapping_params():
 def test_validate_accepts_infrastructure_keys():
     # store (vector_store) and blob_store are valid spec keys alongside stages.
     validate_spec({
-        "embedder": {"name": "hashing"},
+        "representations": [{"name": "dense", "params": {"embedder": {"name": "hashing"}}}],
         "vector_store": {"name": "memory"},
         "blob_store": {"name": "local", "params": {"root": "/data"}},
     })

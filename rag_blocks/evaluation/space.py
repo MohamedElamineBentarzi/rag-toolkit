@@ -53,9 +53,7 @@ STAGE_KINDS: Mapping[str, str] = {
     "parser": "parser",
     "chunker": "chunker",
     "enrich": "enricher",
-    "embedder": "embedder",
-    "sparse": "sparse_encoder",
-    "lexical": "lexical_index",
+    "representations": "representation",
     "retriever": "retriever",
     "refine": "refiner",
     "generator": "generator",
@@ -77,8 +75,13 @@ INFRA_KINDS: Mapping[str, str] = {
 #: only `STAGE_KINDS`.
 SPEC_KINDS: Mapping[str, str] = {**STAGE_KINDS, **INFRA_KINDS}
 
-#: Stages that are a *chain* of components rather than one.
-CHAIN_STAGES = frozenset({"refine", "enrich"})
+#: Stages that are a *chain* (a list) of components rather than one. The
+#: corpus's `representations` are one too: a corpus owns a *list* of them, and
+#: "dense-only vs dense+lexical" is exactly the kind of set the tuner varies —
+#: so it reuses the chain machinery (each option a list of representation
+#: choices, the empty list meaning "no explicit corpus, let the pipeline
+#: default"). A representation choice may nest its encoder as another `choice`.
+CHAIN_STAGES = frozenset({"refine", "enrich", "representations"})
 
 
 @dataclass(frozen=True)
@@ -91,11 +94,29 @@ class Choice:
     def expand(self) -> Iterator[dict]:
         """Every concrete config this choice stands for, in a stable order.
 
-        Cartesian product over the list-valued params; tuple- and scalar-valued
-        params are carried through untouched.
+        Cartesian product over the axis params; tuple- and scalar-valued params
+        are carried through untouched. Three kinds of axis:
+
+        - a plain `list` — one trial per item (the classic grid);
+        - a nested `choice(...)` — its own expansions become this param's values,
+          so an encoder tunes *inside* a representation:
+          `choice("dense", embedder=choice("hashing", dimensions=[32, 64]))`
+          is two trials, each carrying a full `{"name", "params"}` encoder spec;
+        - a `list` that contains `choice(...)` items — each nested choice
+          contributes all of its expansions to the axis.
+
+        A nested choice always resolves to `{"name", "params"}` dicts, exactly
+        the sub-spec shape `PipelineBuilder` resolves for a representation's
+        encoder — so tuning composes without any new spec vocabulary.
         """
-        axes = {k: v for k, v in self.params.items() if isinstance(v, list)}
-        fixed = {k: v for k, v in self.params.items() if not isinstance(v, list)}
+        axes: dict[str, list] = {}
+        fixed: dict[str, Any] = {}
+        for key, value in self.params.items():
+            values = _axis_values(value)
+            if values is None:
+                fixed[key] = value
+            else:
+                axes[key] = values
         if not axes:
             yield {"name": self.name, "params": dict(fixed)}
             return
@@ -105,6 +126,26 @@ class Choice:
         keys = sorted(axes)
         for combo in product(*(axes[k] for k in keys)):
             yield {"name": self.name, "params": {**fixed, **dict(zip(keys, combo))}}
+
+
+def _axis_values(value: Any) -> list | None:
+    """The concrete values a param contributes to the product, or None if it is
+    a fixed (scalar/tuple/dict) param carried through untouched.
+
+    A `Choice` expands to its `{name, params}` specs (nested-encoder tuning); a
+    `list` is a grid axis whose `Choice` items each contribute their expansions.
+    """
+    if isinstance(value, Choice):
+        return list(value.expand())
+    if isinstance(value, list):
+        out: list = []
+        for item in value:
+            if isinstance(item, Choice):
+                out.extend(item.expand())
+            else:
+                out.append(item)
+        return out
+    return None
 
 
 def choice(name: str, **params: Any) -> Choice:

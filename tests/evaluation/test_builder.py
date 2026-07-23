@@ -9,7 +9,12 @@ from rag_blocks.pipeline import RagPipeline
 from rag_blocks.storage.local import LocalBlobStore
 from rag_blocks.storage.memory_store import MemoryVectorStore
 
-DENSE = {"embedder": {"name": "hashing", "params": {"dimensions": 64}}}
+DENSE = {
+    "representations": [
+        {"name": "dense",
+         "params": {"embedder": {"name": "hashing", "params": {"dimensions": 64}}}}
+    ]
+}
 
 
 def test_builds_a_live_pipeline_from_a_spec():
@@ -37,11 +42,29 @@ def test_an_omitted_stage_keeps_the_pipelines_own_default():
     assert rag.generator.name == "extractive"  # RagPipeline's default
 
 
-def test_representations_become_the_index():
-    rag = PipelineBuilder().build(
-        {**DENSE, "lexical": {"name": "bm25", "params": {}}}
-    )
+def test_representations_become_the_corpus():
+    rag = PipelineBuilder().build({
+        "representations": [
+            {"name": "dense",
+             "params": {"embedder": {"name": "hashing", "params": {"dimensions": 64}}}},
+            {"name": "lexical", "params": {"index": {"name": "bm25"}}},
+        ]
+    })
     assert set(rag.corpus.representations()) == {"dense", "lexical"}
+
+
+def test_a_new_representation_kind_needs_no_builder_change():
+    # The Open/Closed win: a representation is named in the list like any other
+    # registered component; its encoder nests as a sub-spec the builder resolves
+    # by type. No hardcoded embedder/sparse/lexical keys anywhere.
+    rag = PipelineBuilder().build({
+        "representations": [
+            {"name": "dense", "params": {
+                "space": "bge",
+                "embedder": {"name": "hashing", "params": {"dimensions": 128}}}},
+        ]
+    })
+    assert rag.corpus.representations() == ["bge"]
 
 
 def test_a_chain_stage_builds_in_order():
@@ -190,7 +213,10 @@ def test_omitting_infra_keeps_the_builders_own_defaults():
 
 def test_fusion_wraps_sub_retrievers_from_a_nested_spec():
     rag = PipelineBuilder().build({
-        "embedder": {"name": "hashing"}, "lexical": {"name": "bm25"},
+        "representations": [
+            {"name": "dense", "params": {"embedder": {"name": "hashing"}}},
+            {"name": "lexical", "params": {"index": {"name": "bm25"}}},
+        ],
         "retriever": {"name": "fusion", "retrievers": [
             {"name": "index", "params": {"representation": "dense"}},
             {"name": "index", "params": {"representation": "lexical"}},
@@ -203,7 +229,8 @@ def test_fusion_wraps_sub_retrievers_from_a_nested_spec():
 def test_hyde_wraps_an_inner_retriever_and_takes_the_generators_llm():
     # `complete` comes from the generator (§7.6 seam), not the spec.
     rag = PipelineBuilder().build({
-        "embedder": {"name": "hashing"}, "generator": {"name": "anthropic"},
+        "representations": [{"name": "dense", "params": {"embedder": {"name": "hashing"}}}],
+        "generator": {"name": "anthropic"},
         "retriever": {"name": "hyde",
                       "inner": {"name": "index", "params": {"representation": "dense"}}},
     })
@@ -214,7 +241,7 @@ def test_hyde_wraps_an_inner_retriever_and_takes_the_generators_llm():
 def test_a_query_shaping_retriever_without_an_llm_says_what_to_do():
     with pytest.raises(ConfigError, match="LLM"):
         PipelineBuilder().build({
-            "embedder": {"name": "hashing"},
+            "representations": [{"name": "dense", "params": {"embedder": {"name": "hashing"}}}],
             "retriever": {"name": "hyde",
                           "inner": {"name": "index", "params": {"representation": "dense"}}},
         })

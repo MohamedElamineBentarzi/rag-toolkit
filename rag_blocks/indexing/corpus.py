@@ -101,15 +101,12 @@ class Corpus(Component):
     #: Alias reading better where the space *name* is what matters.
     spaces = representations
 
-    def encoders(self) -> dict[str, Component]:
-        """Space name → the underlying encoder component that produces it (an
-        `Embedder`/`SparseEncoder`/`LexicalIndex`), in stable order. The read
-        accessor the evaluation suite uses to record what actually ran — grouped
-        by `component.kind`, so it never has to know how a Corpus stores its
-        representations. Reps wrapping no single component are omitted."""
-        return {
-            r.space: r.encoder for r in self._reps if r.encoder is not None
-        }
+    def encoders(self) -> dict[str, Representation]:
+        """Space name → the `Representation` owning it, in stable order. The read
+        accessor the evaluation suite uses to record what actually ran under each
+        space (a fingerprint alone can't say which representation/encoder that
+        was); each representation's `describe()` folds in its own encoder."""
+        return {r.space: r for r in self._reps}
 
     # -- writes --------------------------------------------------------------
 

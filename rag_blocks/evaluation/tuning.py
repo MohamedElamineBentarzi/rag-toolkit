@@ -36,7 +36,7 @@ from .base import EvalOutcome, EvalSample, Evaluator
 from .builder import PipelineBuilder, PipelineFactory
 from .cost import CostCollector
 from .leaderboard import Leaderboard
-from .space import STAGE_KINDS, SearchSpace
+from .space import SearchSpace
 from .trial import Trial, trial_id_for
 from .trial_log import TrialLog
 
@@ -319,12 +319,12 @@ def _describe(rag: RagPipeline) -> dict:
     reports what was *resolved*, not what was asked for: a spec that omits the
     retriever still records the one the pipeline derived.
 
-    The index's representations are unpacked into their own stage keys
-    (`embedder`, `sparse`, `lexical`). `ChunkIndex.describe()` reports them as
-    fingerprints — right for identity, useless for reading: a hash cannot tell
-    you the run used `hashing(dimensions=128)`. Without this a trial could not
-    be reconstructed from its log line, and the leaderboard could not group by
-    the embedder the tuner was searching over.
+    The corpus's representations are recorded as the `representations` stage —
+    a list of representation describes, each folding in its own encoder's config
+    (a bare fingerprint is right for identity, useless for reading: a hash cannot
+    tell you the run used `hashing(dimensions=128)`). Without this a trial could
+    not be reconstructed from its log line, and the leaderboard could not group
+    by the representation set the tuner was searching over.
     """
     described: dict[str, Any] = {
         "parser": rag.indexing.parser.describe(),
@@ -347,26 +347,13 @@ def _describe(rag: RagPipeline) -> dict:
 
 
 def _representations(corpus: Corpus) -> dict[str, Any]:
-    """The corpus's encoder components, keyed by SearchSpace stage name.
+    """The corpus's representations, as the `representations` stage record.
 
-    Grouped by each component's own `kind` and mapped back through
-    `STAGE_KINDS`, so this never has to know how a `Corpus` stores its
-    representations — it asks.
-
-    Single-representation mounts (the common case) report one describe; a
-    multi-representation mount reports a list, so both forms of progressive
-    disclosure survive into the log.
-    """
-    kind_to_stage = {kind: stage for stage, kind in STAGE_KINDS.items()}
-    grouped: dict[str, list[Any]] = {}
-    for component in corpus.encoders().values():
-        stage = kind_to_stage.get(component.kind)
-        if stage is not None:
-            grouped.setdefault(stage, []).append(component.describe())
-    return {
-        stage: described[0] if len(described) == 1 else described
-        for stage, described in grouped.items()
-    }
+    A list of representation describes (each folding in its own encoder), so a
+    trial says exactly which representations ran and how each was configured —
+    and the leaderboard can take the `representations` marginal ("dense" vs
+    "dense+lexical") straight off it, the same way it does for a refine chain."""
+    return {"representations": [rep.describe() for rep in corpus.encoders().values()]}
 
 
 def _fingerprints(rag: RagPipeline) -> dict[str, str]:
