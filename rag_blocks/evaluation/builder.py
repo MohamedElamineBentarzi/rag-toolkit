@@ -54,7 +54,7 @@ from ..pipeline import RagPipeline, TraceHook, _noop_trace
 from ..storage.base import BlobStore
 from ..storage.memory_store import MemoryVectorStore
 from ..storage.vector_store import VectorStore
-from .space import CHAIN_STAGES, STAGE_KINDS
+from .space import CHAIN_STAGES, SPEC_KINDS
 
 __all__ = ["PipelineBuilder", "PipelineFactory", "validate_spec"]
 
@@ -108,21 +108,42 @@ class PipelineBuilder:
         dense = self._create("embedder", spec["embedder"], None) if "embedder" in spec else None
         sparse = self._create("sparse", spec["sparse"], None) if "sparse" in spec else None
         lexical = self._create("lexical", spec["lexical"], None) if "lexical" in spec else None
+        # The vector store the index persists into: a spec-named one (Qdrant,
+        # in-memory) if given, else the builder's own factory. A fresh instance
+        # per build either way (registry.create builds one), so trials never
+        # share a store — the isolation invariant holds for both paths.
+        store = (
+            self._create("vector_store", spec["vector_store"], None)
+            if "vector_store" in spec else self.store_factory()
+        )
         index: Optional[ChunkIndex] = None
         if dense is not None or sparse is not None or lexical is not None:
-            index = ChunkIndex(
-                self.store_factory(), dense=dense, sparse=sparse, lexical=lexical
-            )
+            index = ChunkIndex(store, dense=dense, sparse=sparse, lexical=lexical)
 
+        # The truth/parse-cache store: spec-named (MinIO, local) or the builder's.
+        # Its credentials never live in the spec (§7.4) — the adapter reads them
+        # from the environment, so a spec names *which* store, not its secrets.
+        blob_store = (
+            self._create("blob_store", spec["blob_store"], None)
+            if "blob_store" in spec else self.blob_store
+        )
         kwargs: dict[str, Any] = {
             "chunk_index": index,
-            "blob_store": self.blob_store,
+            "blob_store": blob_store,
             "trace": self.trace,
             "fetch_k": self.fetch_k,
         }
-        for stage in ("parser", "chunker", "generator", "retriever"):
+        for stage in ("parser", "chunker", "generator"):
             if stage in spec:
                 kwargs[stage] = self._create(stage, spec[stage], index)
+        if "retriever" in spec:
+            # The retriever may be composite (fusion wraps retrievers; hyde /
+            # multi-query wrap one inner + shape the query with an LLM). The one
+            # thing a spec can't carry — that LLM — is the pipeline's own
+            # generator (§7.6's `generator.complete` seam), not a spec field.
+            kwargs["retriever"] = self._build_retriever(
+                spec["retriever"], index, _completion_seam(kwargs.get("generator"))
+            )
         for stage in CHAIN_STAGES:
             if stage in spec:
                 kwargs[stage] = self._chain(stage, spec[stage], index)
@@ -142,10 +163,10 @@ class PipelineBuilder:
         instead of a search.
         """
         name, params = _unpack(stage, entry)
-        cls = registry.get(STAGE_KINDS[stage], name)
+        cls = registry.get(SPEC_KINDS[stage], name)
         if not _takes_index(cls):
             try:
-                return registry.create(STAGE_KINDS[stage], name, **params)
+                return registry.create(SPEC_KINDS[stage], name, **params)
             except ConfigError as exc:
                 # Name the stage: "unknown field 'sze'" is a lot less useful
                 # than knowing which of nine stages spelled it.
@@ -163,6 +184,46 @@ class PipelineBuilder:
         except ConfigError as exc:
             raise ConfigError(f"PipelineBuilder: {stage}={name!r}: {exc}") from exc
 
+    def _build_retriever(
+        self,
+        entry: dict,
+        index: Optional[ChunkIndex],
+        complete: Optional[Callable[[str], str]],
+    ) -> Any:
+        """A retriever, recursively — composites wrap other retrievers *as data*
+        (DR-0001 v2: retrievers wrapping retrievers, never new pipeline slots).
+
+        `fusion` carries a `retrievers: [<spec>, ...]` list; `hyde` / `multi-query`
+        carry an `inner: <spec>` and shape the query with an LLM. A base retriever
+        (`index` / `hybrid`) has neither and goes through `_create` (index-backed).
+        """
+        name, _ = _unpack("retriever", entry)
+        if "retrievers" in entry:  # fusion: fuse a list of sub-retrievers
+            subs = [
+                self._build_retriever(e, index, complete)
+                for e in _entry_list(entry["retrievers"])
+            ]
+            return self._compose(name, entry, retrievers=subs)
+        if "inner" in entry:  # hyde / multi-query: wrap one inner + an LLM
+            inner = self._build_retriever(entry["inner"], index, complete)
+            if complete is None:
+                raise ConfigError(
+                    f"PipelineBuilder: retriever={name!r} shapes the query with an "
+                    f"LLM, but the pipeline has none — add an LLM generator "
+                    f"(e.g. {{'generator': {{'name': 'anthropic'}}}})."
+                )
+            return self._compose(name, entry, inner=inner, complete=complete)
+        return self._create("retriever", entry, index)  # base: index / hybrid
+
+    def _compose(self, name: str, entry: dict, **wiring: Any) -> Any:
+        """Build a composite retriever from its already-built parts + its params."""
+        _, params = _unpack("retriever", entry)
+        cls = registry.get("retriever", name)
+        try:
+            return cls(**wiring, **params)
+        except (ConfigError, TypeError) as exc:
+            raise ConfigError(f"PipelineBuilder: retriever={name!r}: {exc}") from exc
+
     def _chain(
         self, stage: str, entries: Sequence[dict], index: Optional[ChunkIndex]
     ) -> list:
@@ -172,6 +233,23 @@ class PipelineBuilder:
                 f"{type(entries).__name__}"
             )
         return [self._create(stage, entry, index) for entry in entries]
+
+
+def _completion_seam(generator: Any) -> Optional[Callable[[str], str]]:
+    """The bare LLM completion a query-shaping retriever needs, taken from the
+    pipeline's generator (§7.6's `generator.complete` seam). `None` when the
+    generator has no LLM (the extractive default) — HyDE/MultiQuery then fail
+    with a clear message, since they cannot shape a query without one."""
+    complete = getattr(generator, "complete", None)
+    return complete if callable(complete) else None
+
+
+def _entry_list(value: Any) -> list:
+    if not isinstance(value, (list, tuple)):
+        raise ConfigError(
+            "PipelineBuilder: retriever.retrievers must be a list of retriever specs"
+        )
+    return list(value)
 
 
 def _takes_index(cls: type) -> bool:
@@ -211,10 +289,10 @@ def validate_spec(spec: Mapping[str, Any]) -> None:
         raise ConfigError(
             f"spec must be a mapping of stage -> entry, got {type(spec).__name__}"
         )
-    unknown = set(spec) - set(STAGE_KINDS)
+    unknown = set(spec) - set(SPEC_KINDS)
     if unknown:
         raise ConfigError(
-            f"unknown stage(s) {sorted(unknown)}; known: {sorted(STAGE_KINDS)}"
+            f"unknown stage(s) {sorted(unknown)}; known: {sorted(SPEC_KINDS)}"
         )
     for stage, value in spec.items():
         if stage in CHAIN_STAGES:
@@ -245,6 +323,19 @@ def _validate_entry(stage: str, entry: Any) -> None:
             f"{stage}={entry['name']!r}: params must be a mapping, "
             f"got {type(params).__name__}"
         )
+    # Composite retrievers nest other retriever specs (fusion's `retrievers`,
+    # hyde/multi-query's `inner`) — validate them recursively, same shape.
+    inner = entry.get("inner")
+    if inner is not None:
+        _validate_entry(stage, inner)
+    subs = entry.get("retrievers")
+    if subs is not None:
+        if not isinstance(subs, (list, tuple)):
+            raise ConfigError(
+                f"{stage}={entry['name']!r}: retrievers must be a list of specs"
+            )
+        for sub in subs:
+            _validate_entry(stage, sub)
 
 
 def _unpack(stage: str, entry: dict) -> tuple[str, dict]:

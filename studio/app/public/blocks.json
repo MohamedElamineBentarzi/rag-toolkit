@@ -1,0 +1,785 @@
+{
+  "components": [
+    {
+      "doc": "Turns a Source into a stream of markdown Pages.",
+      "exportable": true,
+      "kind": "parser",
+      "name": "auto",
+      "params": [
+        {
+          "default": {
+            "docx": "docling",
+            "html": "docling",
+            "image": "docling",
+            "md": "plaintext",
+            "pdf": "docling",
+            "pptx": "docling",
+            "txt": "plaintext",
+            "xlsx": "docling"
+          },
+          "name": "routes",
+          "required": false,
+          "type": "json"
+        },
+        {
+          "default": {},
+          "name": "parser_configs",
+          "required": false,
+          "type": "json"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Turns a Source into a stream of markdown Pages.",
+      "exportable": true,
+      "kind": "parser",
+      "name": "docling",
+      "params": [
+        {
+          "choices": [
+            "auto",
+            "force",
+            "never"
+          ],
+          "default": "auto",
+          "name": "ocr_policy",
+          "required": false,
+          "type": "enum"
+        },
+        {
+          "default": null,
+          "name": "ocr_engine",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": {},
+          "name": "ocr_engine_config",
+          "required": false,
+          "type": "json"
+        },
+        {
+          "default": 8,
+          "name": "page_batch_size",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": 32,
+          "name": "min_chars_digital",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": 200,
+          "name": "render_dpi",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Turns a Source into a stream of markdown Pages.",
+      "exportable": true,
+      "kind": "parser",
+      "name": "plaintext",
+      "params": [
+        {
+          "default": "utf-8",
+          "name": "encoding",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": 8000,
+          "name": "page_chars",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Turns a Document into a stream of retrieval Chunks.",
+      "exportable": true,
+      "kind": "chunker",
+      "name": "fixed",
+      "params": [
+        {
+          "default": 1600,
+          "name": "chunk_chars",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": 200,
+          "name": "overlap_chars",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Turns a Document into a stream of retrieval Chunks.",
+      "exportable": true,
+      "kind": "chunker",
+      "name": "markdown-aware",
+      "params": [],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: augment a document's chunk stream with context.",
+      "exportable": true,
+      "kind": "enrich",
+      "name": "contextual",
+      "params": [
+        {
+          "default": "claude-opus-4-8",
+          "name": "model",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": 128,
+          "name": "max_tokens",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "api_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": 16000,
+          "name": "max_document_chars",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: augment a document's chunk stream with context.",
+      "exportable": true,
+      "kind": "enrich",
+      "name": "heading",
+      "params": [],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: text \u2192 dense vector.",
+      "exportable": true,
+      "kind": "embedder",
+      "name": "hashing",
+      "params": [
+        {
+          "default": 256,
+          "name": "dimensions",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: text \u2192 dense vector.",
+      "exportable": true,
+      "kind": "embedder",
+      "name": "sentence-transformers",
+      "params": [
+        {
+          "default": "BAAI/bge-m3",
+          "name": "model",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": "",
+          "name": "query_instruction",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": true,
+          "name": "normalize",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": 32,
+          "name": "batch_size",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "device",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: a term-based search index.",
+      "exportable": true,
+      "kind": "lexical",
+      "name": "bm25",
+      "params": [
+        {
+          "default": 1.5,
+          "name": "k1",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "default": 0.75,
+          "name": "b",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "default": "default",
+          "name": "namespace",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.2.0"
+    },
+    {
+      "composite": "retrievers",
+      "doc": "Strategy interface: Query \u2192 ranked ScoredChunks.",
+      "exportable": true,
+      "kind": "retriever",
+      "name": "fusion",
+      "params": [
+        {
+          "default": "rrf",
+          "name": "fusion",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": 60,
+          "name": "rrf_k",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": 60,
+          "name": "fetch_k",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "weights",
+          "required": false,
+          "type": "json"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: Query \u2192 ranked ScoredChunks.",
+      "exportable": true,
+      "kind": "retriever",
+      "name": "hybrid",
+      "params": [
+        {
+          "default": null,
+          "name": "representations",
+          "required": false,
+          "type": "json"
+        },
+        {
+          "default": 60,
+          "name": "rrf_k",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": 60,
+          "name": "fetch_k",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "weights",
+          "required": false,
+          "type": "json"
+        }
+      ],
+      "takes_index": true,
+      "version": "0.2.0"
+    },
+    {
+      "composite": "inner",
+      "doc": "Hypothetical Document Embeddings: retrieve on an LLM-drafted answer.",
+      "exportable": true,
+      "kind": "retriever",
+      "name": "hyde",
+      "needs_llm": true,
+      "params": [],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: Query \u2192 ranked ScoredChunks.",
+      "exportable": true,
+      "kind": "retriever",
+      "name": "index",
+      "params": [
+        {
+          "default": null,
+          "name": "representation",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "takes_index": true,
+      "version": "0.1.0"
+    },
+    {
+      "composite": "inner",
+      "doc": "Expand the query into `n` phrasings, retrieve each, fuse (RAG-fusion).",
+      "exportable": true,
+      "kind": "retriever",
+      "name": "multi-query",
+      "needs_llm": true,
+      "params": [
+        {
+          "default": 4,
+          "name": "n",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": 60,
+          "name": "rrf_k",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: one stage of the post-retrieval chain.",
+      "exportable": true,
+      "kind": "refine",
+      "name": "cross-encoder",
+      "params": [
+        {
+          "default": "BAAI/bge-reranker-v2-m3",
+          "name": "model",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": 32,
+          "name": "batch_size",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "device",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: one stage of the post-retrieval chain.",
+      "exportable": true,
+      "kind": "refine",
+      "name": "keyword",
+      "params": [],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: one stage of the post-retrieval chain.",
+      "exportable": true,
+      "kind": "refine",
+      "name": "neighbor-expander",
+      "params": [
+        {
+          "default": 1,
+          "name": "window",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": true,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: one stage of the post-retrieval chain.",
+      "exportable": true,
+      "kind": "refine",
+      "name": "score-threshold",
+      "params": [
+        {
+          "default": 0.0,
+          "name": "min_score",
+          "required": false,
+          "type": "float"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: (query, context) \u2192 Answer with citations.",
+      "exportable": true,
+      "kind": "generator",
+      "name": "anthropic",
+      "params": [
+        {
+          "default": "claude-opus-4-8",
+          "name": "model",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": 1024,
+          "name": "max_tokens",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "api_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": 8000,
+          "name": "max_context_chars",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "system",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: (query, context) \u2192 Answer with citations.",
+      "exportable": true,
+      "kind": "generator",
+      "name": "extractive",
+      "params": [
+        {
+          "default": 4000,
+          "name": "max_context_chars",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: a named, typed, multi-vector upsert-and-search index.",
+      "exportable": true,
+      "kind": "vector_store",
+      "name": "memory",
+      "params": [],
+      "takes_index": false,
+      "version": "0.2.0"
+    },
+    {
+      "doc": "Strategy interface: a named, typed, multi-vector upsert-and-search index.",
+      "exportable": true,
+      "kind": "vector_store",
+      "name": "qdrant",
+      "params": [
+        {
+          "default": "rag_blocks",
+          "name": "collection",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "url",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "location",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "path",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "api_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": false,
+          "name": "prefer_grpc",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "name": "recreate_on_mismatch",
+          "required": false,
+          "type": "bool"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.2.1"
+    },
+    {
+      "doc": "Store blobs as files under a root directory.",
+      "exportable": true,
+      "kind": "blob_store",
+      "name": "local",
+      "params": [
+        {
+          "default": ".rag_cache/blobs",
+          "name": "root",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Store blobs as objects in an S3-compatible bucket.",
+      "exportable": true,
+      "kind": "blob_store",
+      "name": "minio",
+      "params": [
+        {
+          "default": "localhost:9000",
+          "name": "endpoint",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": "rag-blocks",
+          "name": "bucket",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "access_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "secret_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": false,
+          "name": "secure",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": null,
+          "name": "region",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": true,
+          "name": "make_bucket",
+          "required": false,
+          "type": "bool"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    }
+  ],
+  "stages": [
+    {
+      "chain": false,
+      "in": [
+        "Source",
+        "BlobStore"
+      ],
+      "kind": "parser",
+      "out": "Document",
+      "single": true
+    },
+    {
+      "chain": false,
+      "in": [
+        "Document"
+      ],
+      "kind": "chunker",
+      "out": "Chunk[]",
+      "single": true
+    },
+    {
+      "chain": true,
+      "in": [
+        "Chunk[]"
+      ],
+      "kind": "enrich",
+      "out": "Chunk[]",
+      "single": false
+    },
+    {
+      "chain": false,
+      "in": [
+        "Chunk[]"
+      ],
+      "kind": "embedder",
+      "out": "Representation",
+      "single": true
+    },
+    {
+      "chain": false,
+      "in": [
+        "Chunk[]"
+      ],
+      "kind": "sparse",
+      "out": "Representation",
+      "single": true
+    },
+    {
+      "chain": false,
+      "in": [
+        "Chunk[]"
+      ],
+      "kind": "lexical",
+      "out": "Representation",
+      "single": true
+    },
+    {
+      "chain": false,
+      "in": [
+        "Query",
+        "Index"
+      ],
+      "kind": "retriever",
+      "out": "ScoredChunk[]",
+      "single": true
+    },
+    {
+      "chain": true,
+      "in": [
+        "ScoredChunk[]"
+      ],
+      "kind": "refine",
+      "out": "ScoredChunk[]",
+      "single": false
+    },
+    {
+      "chain": false,
+      "in": [
+        "ScoredChunk[]"
+      ],
+      "kind": "generator",
+      "out": "Answer",
+      "single": true
+    },
+    {
+      "chain": false,
+      "in": [],
+      "kind": "vector_store",
+      "out": "Store",
+      "single": true
+    },
+    {
+      "chain": false,
+      "in": [],
+      "kind": "blob_store",
+      "out": "BlobStore",
+      "single": true
+    },
+    {
+      "in": [
+        "Representation",
+        "Store"
+      ],
+      "kind": "index",
+      "out": "Index",
+      "synthetic": true
+    }
+  ],
+  "types": {
+    "Answer": {
+      "color": "#d4d44a"
+    },
+    "BlobStore": {
+      "color": "#c08a52"
+    },
+    "Chunk[]": {
+      "color": "#43b581"
+    },
+    "Document": {
+      "color": "#4f9dde"
+    },
+    "Index": {
+      "color": "#e0a458"
+    },
+    "Query": {
+      "color": "#5ec8c8"
+    },
+    "Representation": {
+      "color": "#c586f0"
+    },
+    "ScoredChunk[]": {
+      "color": "#e06c9f"
+    },
+    "Source": {
+      "color": "#8b8b9e"
+    },
+    "Store": {
+      "color": "#8f7dff"
+    }
+  }
+}

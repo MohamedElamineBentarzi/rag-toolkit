@@ -32,7 +32,10 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
+# Anchored to the repo root: this is setuptools' top-level MANIFEST artifact.
+# Unanchored "MANIFEST" also matches studio/app/src/manifest/ on case-insensitive
+# filesystems (Windows core.ignorecase), silently dropping tracked source.
+/MANIFEST
 
 # Unit test / coverage reports
 htmlcov/
@@ -90,3 +93,11 @@ Thumbs.db
 .rag_cache/
 *.sqlite
 *.sqlite3
+
+# rag-blocks Studio (optional React app) — node deps and build output.
+# app/public/blocks.json IS committed (generated, but ships with the static site).
+studio/app/node_modules/
+studio/app/dist/
+# The release step copies the built app here to bundle it into the wheel; it is
+# a build artifact, never committed (hatch `artifacts` includes it when present).
+rag_blocks/studio/_dist/

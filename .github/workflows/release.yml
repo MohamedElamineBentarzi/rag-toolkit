@@ -70,10 +70,40 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: studio/app/package-lock.json
+      # Build the optional Studio app and stage it where hatch's `artifacts`
+      # rule (rag_blocks/studio/_dist/**) picks it up, so the wheel ships a
+      # ready-to-run `rag-blocks studio`. tsc + vitest run here too: a broken
+      # Studio blocks the release. Node is a build-time-only dependency.
+      - name: Build Studio (frontend)
+        working-directory: studio/app
+        run: |
+          npm ci
+          npm run test
+          npm run build
+      - name: Bundle Studio into the package
+        run: |
+          rm -rf rag_blocks/studio/_dist
+          cp -r studio/app/dist rag_blocks/studio/_dist
+          test -f rag_blocks/studio/_dist/index.html
       - name: Build sdist + wheel
         run: |
           python -m pip install --upgrade build twine
           python -m build
+      - name: "Sanity: the wheel bundled the Studio build"
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          whl = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(whl).namelist()
+          assert any(n.startswith("rag_blocks/studio/_dist/") for n in names), \
+              "wheel is missing the bundled Studio build"
+          print("OK: Studio bundled in", whl)
+          PY
       - name: Check metadata
         run: python -m twine check --strict dist/*
       - name: "Sanity: built version matches the gate"
