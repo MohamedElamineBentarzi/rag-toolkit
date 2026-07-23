@@ -15,7 +15,6 @@ interface RetrieverEntry {
 // so we reconstruct the pipeline wiring by contract type and auto-lay-it-out
 // with dagre. Endpoints (Source, Query) stay unconnected, as on a fresh build.
 
-const REPRESENTATIONS = ["embedder", "sparse", "lexical"];
 const NODE_W = 180;
 const NODE_H = 68;
 
@@ -55,6 +54,27 @@ export function importSpec(
     const e = spec[kind] as { name: string; params?: Record<string, unknown> } | undefined;
     return e ? mk(kind, e.name, e.params ?? {}) : null;
   };
+  // A representation, whose wrapped encoder rides nested in its params under the
+  // manifest-named param (`embedder`/`index`/…) — lifted back into node.data.encoder.
+  const mkRep = (e: { name: string; params?: Record<string, unknown> }): BlockNode => {
+    const comp = mIndex.component("representations", e.name);
+    const encParam = comp?.encoder?.param;
+    const flat: Record<string, unknown> = {};
+    for (const p of comp?.params ?? []) flat[p.name] = p.default;
+    for (const [k, v] of Object.entries(e.params ?? {})) if (k !== encParam) flat[k] = v;
+    const node = mk("representations", e.name, {});
+    node.data.params = flat;
+    if (encParam && comp?.encoder) {
+      const enc = e.params?.[encParam] as { name: string; params?: Record<string, unknown> } | undefined;
+      if (enc) {
+        const encParams: Record<string, unknown> = {};
+        for (const p of mIndex.component(comp.encoder.kind, enc.name)?.params ?? []) encParams[p.name] = p.default;
+        Object.assign(encParams, enc.params ?? {});
+        node.data.encoder = { name: enc.name, params: encParams };
+      }
+    }
+    return node;
+  };
   const chain = (kind: string): BlockNode[] => {
     const list = (spec[kind] as { name: string; params?: Record<string, unknown> }[]) ?? [];
     return list.map((e) => mk(kind, e.name, e.params ?? {}));
@@ -79,19 +99,20 @@ export function importSpec(
   const parser = single("parser");
   const chunker = single("chunker");
   const enrichers = chain("enrich");
-  const reps = REPRESENTATIONS.map((k) => single(k)).filter((n): n is BlockNode => !!n);
+  const repEntries = (spec["representations"] as { name: string; params?: Record<string, unknown> }[]) ?? [];
+  const reps = repEntries.map(mkRep);
   const store = single("vector_store");
   const retriever = buildRetriever(spec["retriever"] as RetrieverEntry | undefined);
   const refiners = chain("refine");
   const generator = single("generator");
   const blob = single("blob_store");
 
-  const retrieverTakesIndex = mIndex.component(
+  const retrieverTakesCorpus = mIndex.component(
     retriever?.data.kind ?? "", retriever?.data.name ?? "",
   )?.takes_index;
-  const needsIndex = reps.length > 0 || !!store || !!retrieverTakesIndex;
-  const index = needsIndex ? mk("index", "ChunkIndex", {}) : null;
-  if (index) index.data.synthetic = true;
+  const needsCorpus = reps.length > 0 || !!store || !!retrieverTakesCorpus;
+  const corpus = needsCorpus ? mk("corpus", "Corpus", {}) : null;
+  if (corpus) corpus.data.synthetic = true;
 
   // Wire the backbone by type.
   if (blob && parser) connect(blob, "BlobStore", parser);
@@ -102,10 +123,10 @@ export function importSpec(
     chunkTail = e;
   }
   if (chunkTail) for (const r of reps) connect(chunkTail, "Chunk[]", r);
-  if (index) {
-    for (const r of reps) connect(r, "Representation", index);
-    if (store) connect(store, "Store", index);
-    if (retriever) connect(index, "Index", retriever);
+  if (corpus) {
+    for (const r of reps) connect(r, "Representation", corpus);
+    if (store) connect(store, "Store", corpus);
+    if (retriever) connect(corpus, "Corpus", retriever);
   }
   let scoredTail = retriever;
   for (const r of refiners) {

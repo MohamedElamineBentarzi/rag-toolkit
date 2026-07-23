@@ -12,19 +12,37 @@ function node(id: string, kind: string, name: string, params: Record<string, unk
   return { id, type: "block", position: { x: 0, y: 0 }, data: { kind, name, params } };
 }
 
+/** A representation node: flat params + its wrapped encoder ({name, params}). */
+function repNode(
+  id: string,
+  name: string,
+  params: Record<string, unknown>,
+  encoder: { name: string; params: Record<string, unknown> },
+): BlockNode {
+  return { id, type: "block", position: { x: 0, y: 0 }, data: { kind: "representations", name, params, encoder } };
+}
+
 describe("compileSpec (graph -> spec)", () => {
   it("emits one entry per single stage, omitting default params", () => {
     const nodes = [
       node("c", "chunker", "fixed", { chunk_chars: 200, overlap_chars: 200 }), // overlap is default
-      node("e", "embedder", "hashing", { dimensions: 256 }), // default
+      repNode("e", "dense", {}, { name: "hashing", params: { dimensions: 256 } }), // dims default
       node("g", "generator", "extractive", { max_context_chars: 4000 }), // default
     ];
     const spec = compileSpec(nodes, [], mIndex);
     expect(spec).toEqual({
       chunker: { name: "fixed", params: { chunk_chars: 200 } }, // only the non-default
-      embedder: { name: "hashing", params: {} },
       generator: { name: "extractive", params: {} },
+      representations: [{ name: "dense", params: { embedder: { name: "hashing", params: {} } } }],
     });
+  });
+
+  it("nests a tuned encoder inside its representation", () => {
+    const nodes = [repNode("e", "dense", {}, { name: "hashing", params: { dimensions: 128 } })];
+    const spec = compileSpec(nodes, [], mIndex) as { representations: unknown[] };
+    expect(spec.representations).toEqual([
+      { name: "dense", params: { embedder: { name: "hashing", params: { dimensions: 128 } } } },
+    ]);
   });
 
   it("never exports a secret param", () => {
@@ -68,7 +86,7 @@ describe("round trip (import -> compile)", () => {
   it("reproduces a spec through the graph and back", () => {
     const spec = {
       chunker: { name: "fixed", params: { chunk_chars: 200 } },
-      embedder: { name: "hashing", params: { dimensions: 128 } },
+      representations: [{ name: "dense", params: { embedder: { name: "hashing", params: { dimensions: 128 } } } }],
       refine: [{ name: "score-threshold", params: { min_score: 0.1 } }],
       generator: { name: "extractive", params: {} },
     };
@@ -79,7 +97,7 @@ describe("round trip (import -> compile)", () => {
 
   it("round-trips a composite: hyde wrapping an index retriever", () => {
     const spec = {
-      embedder: { name: "hashing", params: { dimensions: 128 } },
+      representations: [{ name: "dense", params: { embedder: { name: "hashing", params: { dimensions: 128 } } } }],
       retriever: { name: "hyde", params: {}, inner: { name: "index", params: { representation: "dense" } } },
       generator: { name: "anthropic", params: {} },
     };
@@ -87,10 +105,12 @@ describe("round trip (import -> compile)", () => {
     expect(compileSpec(nodes, edges, mIndex)).toEqual(spec);
   });
 
-  it("round-trips fusion wrapping two index retrievers", () => {
+  it("round-trips fusion over a dense + lexical corpus", () => {
     const spec = {
-      embedder: { name: "hashing", params: {} },
-      lexical: { name: "bm25", params: {} },
+      representations: [
+        { name: "dense", params: { embedder: { name: "hashing", params: {} } } },
+        { name: "lexical", params: { index: { name: "bm25", params: {} } } },
+      ],
       retriever: {
         name: "fusion",
         params: {},
@@ -109,7 +129,7 @@ describe("round trip (import -> compile)", () => {
     const spec = {
       parser: { name: "plaintext", params: {} },
       chunker: { name: "fixed", params: { chunk_chars: 200 } },
-      embedder: { name: "hashing", params: { dimensions: 128 } },
+      representations: [{ name: "dense", params: { embedder: { name: "hashing", params: { dimensions: 128 } } } }],
       vector_store: { name: "memory", params: {} },
       blob_store: { name: "local", params: { root: "/data" } },
       generator: { name: "extractive", params: {} },

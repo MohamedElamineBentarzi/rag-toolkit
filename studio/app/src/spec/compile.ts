@@ -15,8 +15,7 @@ interface SpecEntry {
 // chains, with which non-default params.
 
 const SINGLE_STAGES = [
-  "parser", "chunker", "embedder", "sparse", "lexical", "retriever", "generator",
-  "vector_store", "blob_store",
+  "parser", "chunker", "retriever", "generator", "vector_store", "blob_store",
 ];
 const CHAIN_STAGES = ["enrich", "refine"];
 
@@ -37,7 +36,26 @@ export function compileSpec(
     const chain = orderChain(nodes.filter((n) => n.data.kind === kind), edges);
     if (chain.length) spec[kind] = chain.map((n) => entry(n, mIndex));
   }
+  // Representations: a generic list, each carrying its wrapped encoder as a
+  // nested sub-spec (DR-0004) — no hardcoded embedder/sparse/lexical keys.
+  const reps = nodes.filter((n) => n.data.kind === "representations");
+  if (reps.length) spec.representations = reps.map((n) => repEntry(n, mIndex));
   return spec;
+}
+
+/** A representation entry: its flat params (e.g. `space`) plus the wrapped
+ *  encoder nested under the param the manifest names (`embedder`/`index`/…). */
+function repEntry(node: BlockNode, mIndex: ManifestIndex): SpecEntry {
+  const comp = mIndex.component(node.data.kind, node.data.name);
+  const params = cleanParams(node.data.kind, node.data.name, node.data.params, mIndex);
+  if (comp?.encoder && node.data.encoder) {
+    const enc = node.data.encoder;
+    params[comp.encoder.param] = {
+      name: enc.name,
+      params: cleanParams(comp.encoder.kind, enc.name, enc.params, mIndex),
+    };
+  }
+  return { name: node.data.name, params };
 }
 
 /** One `{name, params}` entry, plus the nested sub-retrievers of a composite. */

@@ -37,7 +37,7 @@ export function outputPort(stage: StageSpec): Port {
 }
 
 /** The one target handle that legitimately accepts many edges: representations
- *  fan into the ChunkIndex. Everything else is one-in. */
+ *  fan into the Corpus. Everything else is one-in. */
 export function acceptsMany(kind: string, port: Port): boolean {
-  return kind === "index" && port.type === "Representation";
+  return kind === "corpus" && port.type === "Representation";
 }

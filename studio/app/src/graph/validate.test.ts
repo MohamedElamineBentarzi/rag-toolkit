@@ -16,7 +16,7 @@ function conn(source: string, sourceType: string, target: string, targetType: st
 }
 
 describe("isValidConnection (the type rule)", () => {
-  const nodes = [node("c", "chunker", "fixed"), node("e", "embedder", "hashing"), node("p", "parser", "docling")];
+  const nodes = [node("c", "chunker", "fixed"), node("e", "representations", "dense"), node("p", "parser", "docling")];
 
   it("allows matching contract types", () => {
     expect(isValidConnection(conn("c", "Chunk[]", "e", "Chunk[]"), nodes, [])).toBe(true);
@@ -37,13 +37,13 @@ describe("isValidConnection (the type rule)", () => {
     expect(isValidConnection(conn("c", "Chunk[]", "e", "Chunk[]"), nodes, edges)).toBe(false);
   });
 
-  it("lets many representations fan into the index", () => {
-    const withIndex = [...nodes, node("idx", "index", "ChunkIndex"), node("e2", "embedder", "hashing")];
+  it("lets many representations fan into the corpus", () => {
+    const withCorpus = [...nodes, node("cx", "corpus", "Corpus"), node("e2", "representations", "lexical")];
     const edges: BlockEdge[] = [
-      { id: "x", source: "e", target: "idx", sourceHandle: "out:Representation", targetHandle: "in:Representation" },
+      { id: "x", source: "e", target: "cx", sourceHandle: "out:Representation", targetHandle: "in:Representation" },
     ];
     expect(
-      isValidConnection(conn("e2", "Representation", "idx", "Representation"), withIndex, edges),
+      isValidConnection(conn("e2", "Representation", "cx", "Representation"), withCorpus, edges),
     ).toBe(true);
   });
 });
@@ -55,18 +55,24 @@ describe("computeProblems (structural)", () => {
     expect(ps.some((p) => p.level === "error" && /chunker/.test(p.message))).toBe(true);
   });
 
-  it("flags an index-backed block that isn't wired to the index", () => {
-    const nodes = [node("r", "retriever", "index"), node("idx", "index", "ChunkIndex")];
+  it("flags a corpus-backed block that isn't wired to the corpus", () => {
+    const nodes = [node("r", "retriever", "index"), node("cx", "corpus", "Corpus")];
     const ps = computeProblems(nodes, [], mIndex);
-    expect(ps.some((p) => /needs the index/.test(p.message))).toBe(true);
+    expect(ps.some((p) => /needs the corpus/.test(p.message))).toBe(true);
   });
 
-  it("is happy with a wired index-backed retriever", () => {
-    const nodes = [node("r", "retriever", "index"), node("idx", "index", "ChunkIndex")];
+  it("is happy with a wired corpus-backed retriever", () => {
+    const nodes = [node("r", "retriever", "index"), node("cx", "corpus", "Corpus")];
     const edges: BlockEdge[] = [
-      { id: "x", source: "idx", target: "r", sourceHandle: "out:Index", targetHandle: "in:Index" },
+      { id: "x", source: "cx", target: "r", sourceHandle: "out:Corpus", targetHandle: "in:Corpus" },
     ];
     const ps = computeProblems(nodes, edges, mIndex);
-    expect(ps.some((p) => /needs the index/.test(p.message))).toBe(false);
+    expect(ps.some((p) => /needs the corpus/.test(p.message))).toBe(false);
+  });
+
+  it("flags a representation missing its encoder", () => {
+    const nodes = [node("e", "representations", "dense")]; // no encoder picked
+    const ps = computeProblems(nodes, [], mIndex);
+    expect(ps.some((p) => /needs embedder/.test(p.message))).toBe(true);
   });
 });

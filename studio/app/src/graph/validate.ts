@@ -33,7 +33,7 @@ export function isValidConnection(
   const tgt = parseHandle(connection.targetHandle);
   if (!targetNode || !tgt) return false;
 
-  // One edge per input handle, except the ChunkIndex's Representation fan-in.
+  // One edge per input handle, except the Corpus's Representation fan-in.
   if (!acceptsMany(targetNode.data.kind, tgt)) {
     const taken = edges.some(
       (e) => e.target === connection.target && e.targetHandle === connection.targetHandle,
@@ -74,7 +74,7 @@ export function computeProblems(
   // Duplicate single-slot stages: two chunkers can't both be "the" chunker.
   const counts = new Map<string, number>();
   for (const n of nodes) {
-    if (n.data.kind === "index") continue;
+    if (n.data.kind === "corpus") continue;
     const stage = mIndex.stage(n.data.kind);
     if (stage?.single) counts.set(n.data.kind, (counts.get(n.data.kind) ?? 0) + 1);
   }
@@ -86,29 +86,38 @@ export function computeProblems(
       });
   }
 
-  // An index-backed block whose Index input isn't wired to a ChunkIndex node.
+  // A corpus-backed block whose Corpus input isn't wired to a Corpus node.
   for (const n of nodes) {
     const comp = mIndex.component(n.data.kind, n.data.name);
     if (!comp?.takes_index) continue;
     const wired = edges.some(
-      (e) => e.target === n.id && e.targetHandle === "in:Index",
+      (e) => e.target === n.id && e.targetHandle === "in:Corpus",
     );
     if (!wired)
       problems.push({
         level: "error",
-        message: `${n.data.kind}:${n.data.name} needs the index — connect a ChunkIndex to its Index port.`,
+        message: `${n.data.kind}:${n.data.name} needs the corpus — connect a Corpus to its Corpus port.`,
       });
   }
 
-  // Representations present but nothing collects them into an index.
-  const reps = nodes.filter((n) =>
-    ["embedder", "sparse", "lexical"].includes(n.data.kind),
-  );
-  const hasIndex = nodes.some((n) => n.data.kind === "index");
-  if (reps.length > 0 && !hasIndex)
+  // A representation missing the encoder it wraps (dense needs an embedder, …).
+  for (const n of nodes) {
+    if (n.data.kind !== "representations") continue;
+    const comp = mIndex.component(n.data.kind, n.data.name);
+    if (comp?.encoder && !n.data.encoder)
+      problems.push({
+        level: "error",
+        message: `${n.data.name} needs ${comp.encoder.kind} — pick one in the inspector.`,
+      });
+  }
+
+  // Representations present but nothing collects them into a corpus.
+  const reps = nodes.filter((n) => n.data.kind === "representations");
+  const hasCorpus = nodes.some((n) => n.data.kind === "corpus");
+  if (reps.length > 0 && !hasCorpus)
     problems.push({
       level: "warn",
-      message: "Representation blocks aren't feeding a ChunkIndex node yet.",
+      message: "Representation blocks aren't feeding a Corpus node yet.",
     });
 
   if (hasCycle(nodes, edges))

@@ -15,8 +15,6 @@ import { handleId, parseHandle } from "./ports";
 import { computeProblems, isValidConnection } from "./validate";
 import { endpointEdges, endpointNodes, isEndpointId, mergeEdges } from "./endpoints";
 
-const REPRESENTATION_KINDS = ["embedder", "sparse", "lexical"];
-
 interface StudioState {
   manifest: Manifest | null;
   mIndex: ManifestIndex | null;
@@ -86,33 +84,39 @@ export const useStudio = create<StudioState>((set, get) => {
       } else if (comp?.composite === "retrievers") {
         node.data.retrievers = [];
       }
+      // Representation: seed its wrapped encoder with the first available one of
+      // the right kind (dense→an embedder, lexical→a lexical index).
+      if (comp?.encoder) {
+        const enc = (mIndex.componentsByKind.get(comp.encoder.kind) ?? []).find((c) => c.exportable);
+        if (enc) node.data.encoder = { name: enc.name, params: mIndex.defaultParams(comp.encoder.kind, enc.name) };
+      }
 
-      // Ensure the synthetic ChunkIndex exists whenever something that attaches
-      // to it appears: a representation, a vector store, or an index-backed
-      // block. The blob store attaches to the parser instead, not the index.
+      // Ensure the synthetic Corpus exists whenever something that attaches to it
+      // appears: a representation, a vector store, or a corpus-backed block. The
+      // blob store attaches to the parser instead, not the corpus.
       const next = [...nodes, node];
-      const needsIndex =
-        REPRESENTATION_KINDS.includes(kind) || kind === "vector_store" || comp?.takes_index;
-      if (needsIndex && !next.some((n) => n.data.kind === "index")) {
-        next.push(makeIndexNode(next.length));
+      const needsCorpus =
+        kind === "representations" || kind === "vector_store" || comp?.takes_index;
+      if (needsCorpus && !next.some((n) => n.data.kind === "corpus")) {
+        next.push(makeCorpusNode(next.length));
       }
 
       // Auto-wire so a new block is never an orphan on the canvas — a sensible
       // default edge the user can still rewire: representations and the store
-      // feed the index; index-backed blocks read from it; the blob store backs
+      // feed the corpus; corpus-backed blocks read from it; the blob store backs
       // the parser (where caching + raw capture happen).
       let nextEdges = edges;
-      const indexNode = next.find((n) => n.data.kind === "index");
+      const corpusNode = next.find((n) => n.data.kind === "corpus");
       if (kind === "blob_store") {
         const parser = next.find((n) => n.data.kind === "parser");
         if (parser) nextEdges = addEdge(makeEdge(node.id, "BlobStore", parser.id, mIndex), nextEdges);
-      } else if (indexNode) {
-        if (REPRESENTATION_KINDS.includes(kind)) {
-          nextEdges = addEdge(makeEdge(node.id, "Representation", indexNode.id, mIndex), nextEdges);
+      } else if (corpusNode) {
+        if (kind === "representations") {
+          nextEdges = addEdge(makeEdge(node.id, "Representation", corpusNode.id, mIndex), nextEdges);
         } else if (kind === "vector_store") {
-          nextEdges = addEdge(makeEdge(node.id, "Store", indexNode.id, mIndex), nextEdges);
+          nextEdges = addEdge(makeEdge(node.id, "Store", corpusNode.id, mIndex), nextEdges);
         } else if (comp?.takes_index) {
-          nextEdges = addEdge(makeEdge(indexNode.id, "Index", node.id, mIndex), nextEdges);
+          nextEdges = addEdge(makeEdge(corpusNode.id, "Corpus", node.id, mIndex), nextEdges);
         }
       }
       // Tie the endpoints in too (Source->parser, Query->retriever, generator->
@@ -219,11 +223,11 @@ function makeEdge(
   };
 }
 
-function makeIndexNode(order: number): BlockNode {
+function makeCorpusNode(order: number): BlockNode {
   return {
-    id: nextId("index", "index"),
+    id: nextId("corpus", "corpus"),
     type: "block",
     position: tile(order),
-    data: { kind: "index", name: "ChunkIndex", params: {}, synthetic: true },
+    data: { kind: "corpus", name: "Corpus", params: {}, synthetic: true },
   };
 }

@@ -34,12 +34,12 @@ export function Inspector() {
       </div>
     );
   }
-  if (node.data.kind === "index") {
+  if (node.data.kind === "corpus") {
     return (
       <div className="inspector">
         <div className="empty">
-          The <b>ChunkIndex</b> is wired from the representation blocks that feed it — it has
-          no params of its own.
+          The <b>Corpus</b> is wired from the representation blocks that feed it and the vector
+          store that backs it — it has no params of its own.
         </div>
       </div>
     );
@@ -73,6 +73,14 @@ export function Inspector() {
             params={node.data.params}
             onChange={(params) => updateParams(node.id, params)}
           />
+          {comp.encoder && (
+            <EncoderEditor
+              comp={comp}
+              node={node}
+              mIndex={mIndex}
+              onPatch={(patch) => updateData(node.id, patch)}
+            />
+          )}
           {comp.composite && (
             <CompositeEditor
               comp={comp}
@@ -85,6 +93,55 @@ export function Inspector() {
       ) : (
         <InfoView comp={comp} />
       )}
+    </div>
+  );
+}
+
+// A representation's wrapped encoder (the embedder/index it mounts), configured
+// here rather than as a separate graph node — the encoder has no meaning apart
+// from the representation that owns it, so it nests in the inspector (DR-0004 D7).
+function EncoderEditor({
+  comp,
+  node,
+  mIndex,
+  onPatch,
+}: {
+  comp: ComponentSpec;
+  node: BlockNode;
+  mIndex: ManifestIndex;
+  onPatch: (patch: { encoder?: SubRetriever }) => void;
+}) {
+  const slot = comp.encoder!;
+  const options = (mIndex.componentsByKind.get(slot.kind) ?? []).filter((c) => c.exportable);
+  const value = node.data.encoder;
+  const encComp = value ? mIndex.component(slot.kind, value.name) : undefined;
+  return (
+    <div className="composite">
+      <div className="composite-head">{slot.kind}</div>
+      <div className="sub-retriever">
+        <div className="sub-head">
+          <select
+            value={value?.name ?? ""}
+            onChange={(e) =>
+              onPatch({ encoder: { name: e.target.value, params: mIndex.defaultParams(slot.kind, e.target.value) } })
+            }
+          >
+            {!value && <option value="">— pick a {slot.kind} —</option>}
+            {options.map((o) => (
+              <option key={o.name} value={o.name}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {value && encComp && encComp.params.length > 0 && (
+          <ConfigForm
+            comp={encComp}
+            params={value.params}
+            onChange={(params) => onPatch({ encoder: { name: value.name, params } })}
+          />
+        )}
+      </div>
     </div>
   );
 }
