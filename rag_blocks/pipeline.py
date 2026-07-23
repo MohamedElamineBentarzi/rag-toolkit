@@ -163,7 +163,7 @@ class IndexingPipeline:
     Two chains and a fan-out. `enrich=[...]` is a chain over the chunk stream
     (Iterator → Iterator, composing trivially — the empty chain *is* the null
     object, so there is no `NoOpEnricher`). `sinks=[...]` is the write fan-out
-    (F4): each sink (a `ChunkIndex`, a `LexicalIndex`, a GraphRAG index) receives
+    (F4): each sink (a `Corpus`, a `LexicalIndex`, a GraphRAG index) receives
     every batch. Batching lives here so memory stays O(batch), never O(corpus).
 
     Still a generator: `index(sources)` yields each chunk as it flows, so a

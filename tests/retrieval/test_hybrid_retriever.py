@@ -1,10 +1,14 @@
-"""HybridRetriever: sugar that fuses a ChunkIndex's representations."""
+"""HybridRetriever: sugar that fuses a Corpus's representations."""
 import pytest
 
 from rag_blocks.core.contracts import Chunk, Query
 from rag_blocks.core.errors import ConfigError
 from rag_blocks.embedding.hashing import HashingEmbedder
-from rag_blocks.indexing.chunk_index import ChunkIndex
+from rag_blocks.indexing.corpus import Corpus
+from rag_blocks.indexing.representation import (
+    DenseRepresentation,
+    LexicalRepresentation,
+)
 from rag_blocks.retrieval.hybrid import HybridRetriever
 from rag_blocks.storage.bm25_index import BM25Index
 from rag_blocks.storage.memory_store import MemoryVectorStore
@@ -18,12 +22,12 @@ def chunk(i, text="x"):
 
 def _index():
     texts = ["quick brown fox", "financial revenue report", "quick financial notes"]
-    index = ChunkIndex(
-        MemoryVectorStore(), dense=HashingEmbedder(dimensions=512),
-        lexical=BM25Index(),
-    )
-    index.add([chunk(i, t) for i, t in enumerate(texts)])
-    return index
+    corpus = Corpus(MemoryVectorStore(), [
+        DenseRepresentation(HashingEmbedder(dimensions=512)),
+        LexicalRepresentation(BM25Index()),
+    ])
+    corpus.add([chunk(i, t) for i, t in enumerate(texts)])
+    return corpus
 
 
 def test_satisfies_the_retriever_contract():

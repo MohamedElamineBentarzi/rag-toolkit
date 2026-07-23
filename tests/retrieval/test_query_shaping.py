@@ -4,7 +4,8 @@ import pytest
 from rag_blocks.core.contracts import Chunk, Query
 from rag_blocks.core.errors import ConfigError
 from rag_blocks.embedding.hashing import HashingEmbedder
-from rag_blocks.indexing.chunk_index import ChunkIndex
+from rag_blocks.indexing.corpus import Corpus
+from rag_blocks.indexing.representation import DenseRepresentation
 from rag_blocks.retrieval.index_retriever import IndexRetriever
 from rag_blocks.retrieval.query_shaping import HydeRetriever, MultiQueryRetriever
 from rag_blocks.storage.memory_store import MemoryVectorStore
@@ -17,9 +18,10 @@ def chunk(i, text):
 
 def _inner():
     texts = ["quick brown fox", "financial revenue report", "weather and seasons"]
-    index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder(dimensions=512))
-    index.add([chunk(i, t) for i, t in enumerate(texts)])
-    return IndexRetriever(index)
+    corpus = Corpus(MemoryVectorStore(),
+                    [DenseRepresentation(HashingEmbedder(dimensions=512))])
+    corpus.add([chunk(i, t) for i, t in enumerate(texts)])
+    return IndexRetriever(corpus)
 
 
 class _RecordingComplete:

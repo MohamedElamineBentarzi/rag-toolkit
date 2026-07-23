@@ -6,11 +6,10 @@ registered plugin), driving a single-pass write and owning all search I/O. The
 write path can fan out to any `ChunkSink` (a `Corpus` is the flagship sink; a
 GraphRAG or alert index is just another one).
 
-`ChunkIndex` is the superseded predecessor, kept during the DR-0004 migration.
+The `Corpus` replaces the former `ChunkIndex` aggregate (DR-0004).
 """
 
 from .catalog import DocumentCatalog, DocumentRef
-from .chunk_index import ChunkIndex
 from .corpus import Corpus
 from .representation import (
     DenseRepresentation,
@@ -26,7 +25,6 @@ __all__ = [
     "DenseRepresentation",
     "SparseRepresentation",
     "LexicalRepresentation",
-    "ChunkIndex",
     "ChunkSink",
     "DocumentCatalog",
     "DocumentRef",

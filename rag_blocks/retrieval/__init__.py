@@ -1,7 +1,7 @@
 """Retrieval subsystem: Query → ranked ScoredChunks, and the composition axis.
 
 Importing this package registers the built-in retrievers. Retrieval is one
-composition axis (DR-0001 v2, D5): read-only *views* over a `ChunkIndex`
+composition axis (DR-0001 v2, D5): read-only *views* over a `Corpus`
 (`IndexRetriever`, `HybridRetriever`) and *composite* nodes that wrap retrievers
 (`FusionRetriever`, `MultiQueryRetriever`, `HydeRetriever`) — retrievers wrapping
 retrievers, like `nn.Module` contains `nn.Module`. Fusion mechanics (dedup by

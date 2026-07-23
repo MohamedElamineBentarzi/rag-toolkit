@@ -4,7 +4,8 @@ import pytest
 from rag_blocks.core.contracts import Chunk, Query, ScoredChunk
 from rag_blocks.core.errors import ConfigError
 from rag_blocks.embedding.hashing import HashingEmbedder
-from rag_blocks.indexing.chunk_index import ChunkIndex
+from rag_blocks.indexing.corpus import Corpus
+from rag_blocks.indexing.representation import DenseRepresentation
 from rag_blocks.refinement.neighbor import NeighborExpander
 from rag_blocks.storage.memory_store import MemoryVectorStore
 
@@ -16,9 +17,9 @@ def chunk(i, text, cs, ce, doc="d", **meta):
 
 
 def index_with(chunks):
-    index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder())
-    index.add(chunks)
-    return index
+    corpus = Corpus(MemoryVectorStore(), [DenseRepresentation(HashingEmbedder())])
+    corpus.add(chunks)
+    return corpus
 
 
 def anchor(c, score=0.9):

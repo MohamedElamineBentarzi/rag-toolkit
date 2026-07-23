@@ -54,7 +54,6 @@ from .embedding import (
     SparseEncoder,
 )
 from .indexing import (
-    ChunkIndex,
     ChunkSink,
     Corpus,
     DenseRepresentation,
@@ -183,7 +182,6 @@ __all__ = [
     "DenseRepresentation",
     "SparseRepresentation",
     "LexicalRepresentation",
-    "ChunkIndex",
     "ChunkSink",
     "DocumentCatalog",
     "DocumentRef",
