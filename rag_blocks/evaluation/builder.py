@@ -49,7 +49,13 @@ from typing import Any, Callable, Optional, Sequence
 
 from ..core.errors import ConfigError
 from ..core.registry import registry
-from ..indexing.chunk_index import ChunkIndex
+from ..indexing.corpus import Corpus
+from ..indexing.representation import (
+    DenseRepresentation,
+    LexicalRepresentation,
+    Representation,
+    SparseRepresentation,
+)
 from ..pipeline import RagPipeline, TraceHook, _noop_trace
 from ..storage.base import BlobStore
 from ..storage.memory_store import MemoryVectorStore
@@ -99,16 +105,19 @@ class PipelineBuilder:
         # registry and the Config can say precisely what they wanted.
         validate_spec(spec)
 
-        # The index and its representations. A fresh store per trial: sharing
+        # The corpus and its representations. A fresh store per trial: sharing
         # one would let an earlier trial's chunks answer a later trial's query.
-        # Spelled out rather than **kwargs so each representation keeps the
-        # type ChunkIndex declares for it.
-        # index=None: these are the index's ingredients, built before it exists.
-        # None of them takes an index — they are what an index is made of.
+        # corpus=None: these encoders are the corpus's ingredients, built before
+        # it exists. None of them takes a corpus — they are what one is made of.
+        #
+        # Interim (DR-0004): the search space still names the encoders by the
+        # keys `embedder`/`sparse`/`lexical`; here we wrap each in its
+        # `Representation` and hand the list to one `Corpus`. The nested
+        # `corpus` spec (D6) is a later step; this keeps existing specs valid.
         dense = self._create("embedder", spec["embedder"], None) if "embedder" in spec else None
         sparse = self._create("sparse", spec["sparse"], None) if "sparse" in spec else None
         lexical = self._create("lexical", spec["lexical"], None) if "lexical" in spec else None
-        # The vector store the index persists into: a spec-named one (Qdrant,
+        # The vector store the corpus persists into: a spec-named one (Qdrant,
         # in-memory) if given, else the builder's own factory. A fresh instance
         # per build either way (registry.create builds one), so trials never
         # share a store — the isolation invariant holds for both paths.
@@ -116,9 +125,14 @@ class PipelineBuilder:
             self._create("vector_store", spec["vector_store"], None)
             if "vector_store" in spec else self.store_factory()
         )
-        index: Optional[ChunkIndex] = None
-        if dense is not None or sparse is not None or lexical is not None:
-            index = ChunkIndex(store, dense=dense, sparse=sparse, lexical=lexical)
+        reps: list[Representation] = []
+        if dense is not None:
+            reps.append(DenseRepresentation(dense))
+        if sparse is not None:
+            reps.append(SparseRepresentation(sparse))
+        if lexical is not None:
+            reps.append(LexicalRepresentation(lexical))
+        corpus: Optional[Corpus] = Corpus(store, reps) if reps else None
 
         # The truth/parse-cache store: spec-named (MinIO, local) or the builder's.
         # Its credentials never live in the spec (§7.4) — the adapter reads them
@@ -128,43 +142,43 @@ class PipelineBuilder:
             if "blob_store" in spec else self.blob_store
         )
         kwargs: dict[str, Any] = {
-            "chunk_index": index,
+            "corpus": corpus,
             "blob_store": blob_store,
             "trace": self.trace,
             "fetch_k": self.fetch_k,
         }
         for stage in ("parser", "chunker", "generator"):
             if stage in spec:
-                kwargs[stage] = self._create(stage, spec[stage], index)
+                kwargs[stage] = self._create(stage, spec[stage], corpus)
         if "retriever" in spec:
             # The retriever may be composite (fusion wraps retrievers; hyde /
             # multi-query wrap one inner + shape the query with an LLM). The one
             # thing a spec can't carry — that LLM — is the pipeline's own
             # generator (§7.6's `generator.complete` seam), not a spec field.
             kwargs["retriever"] = self._build_retriever(
-                spec["retriever"], index, _completion_seam(kwargs.get("generator"))
+                spec["retriever"], corpus, _completion_seam(kwargs.get("generator"))
             )
         for stage in CHAIN_STAGES:
             if stage in spec:
-                kwargs[stage] = self._chain(stage, spec[stage], index)
+                kwargs[stage] = self._chain(stage, spec[stage], corpus)
 
         return RagPipeline(**kwargs)
 
     # -- construction --------------------------------------------------------
 
-    def _create(self, stage: str, entry: dict, index: Optional[ChunkIndex]) -> Any:
+    def _create(self, stage: str, entry: dict, corpus: Optional[Corpus]) -> Any:
         """One component from `{"name": ..., "params": {...}}`.
 
-        A component whose constructor takes an `index` gets the live one. That
-        rule is stage-agnostic on purpose: `IndexRetriever` needs an index, and
+        A component whose constructor takes a `corpus` gets the live one. That
+        rule is stage-agnostic on purpose: `IndexRetriever` needs a corpus, and
         so does `NeighborExpander` — a *refiner*. Special-casing the retriever
-        stage (as this first did) silently made every index-backed refiner
+        stage (as this first did) silently made every corpus-backed refiner
         unbuildable from a spec, and the tuner reported fourteen failed trials
         instead of a search.
         """
         name, params = _unpack(stage, entry)
         cls = registry.get(SPEC_KINDS[stage], name)
-        if not _takes_index(cls):
+        if not _takes_corpus(cls):
             try:
                 return registry.create(SPEC_KINDS[stage], name, **params)
             except ConfigError as exc:
@@ -173,21 +187,21 @@ class PipelineBuilder:
                 raise ConfigError(
                     f"PipelineBuilder: {stage}={name!r}: {exc}"
                 ) from exc
-        if index is None:
+        if corpus is None:
             raise ConfigError(
-                f"PipelineBuilder: {stage}={name!r} needs an index; add an "
+                f"PipelineBuilder: {stage}={name!r} needs a corpus; add an "
                 f"embedder/sparse/lexical stage to the space, or drop this "
                 f"stage and let RagPipeline derive one"
             )
         try:
-            return cls(index, **params)  # type: ignore[call-arg]
+            return cls(corpus, **params)  # type: ignore[call-arg]
         except ConfigError as exc:
             raise ConfigError(f"PipelineBuilder: {stage}={name!r}: {exc}") from exc
 
     def _build_retriever(
         self,
         entry: dict,
-        index: Optional[ChunkIndex],
+        corpus: Optional[Corpus],
         complete: Optional[Callable[[str], str]],
     ) -> Any:
         """A retriever, recursively — composites wrap other retrievers *as data*
@@ -195,17 +209,17 @@ class PipelineBuilder:
 
         `fusion` carries a `retrievers: [<spec>, ...]` list; `hyde` / `multi-query`
         carry an `inner: <spec>` and shape the query with an LLM. A base retriever
-        (`index` / `hybrid`) has neither and goes through `_create` (index-backed).
+        (`index` / `hybrid`) has neither and goes through `_create` (corpus-backed).
         """
         name, _ = _unpack("retriever", entry)
         if "retrievers" in entry:  # fusion: fuse a list of sub-retrievers
             subs = [
-                self._build_retriever(e, index, complete)
+                self._build_retriever(e, corpus, complete)
                 for e in _entry_list(entry["retrievers"])
             ]
             return self._compose(name, entry, retrievers=subs)
         if "inner" in entry:  # hyde / multi-query: wrap one inner + an LLM
-            inner = self._build_retriever(entry["inner"], index, complete)
+            inner = self._build_retriever(entry["inner"], corpus, complete)
             if complete is None:
                 raise ConfigError(
                     f"PipelineBuilder: retriever={name!r} shapes the query with an "
@@ -213,7 +227,7 @@ class PipelineBuilder:
                     f"(e.g. {{'generator': {{'name': 'anthropic'}}}})."
                 )
             return self._compose(name, entry, inner=inner, complete=complete)
-        return self._create("retriever", entry, index)  # base: index / hybrid
+        return self._create("retriever", entry, corpus)  # base: index / hybrid
 
     def _compose(self, name: str, entry: dict, **wiring: Any) -> Any:
         """Build a composite retriever from its already-built parts + its params."""
@@ -225,14 +239,14 @@ class PipelineBuilder:
             raise ConfigError(f"PipelineBuilder: retriever={name!r}: {exc}") from exc
 
     def _chain(
-        self, stage: str, entries: Sequence[dict], index: Optional[ChunkIndex]
+        self, stage: str, entries: Sequence[dict], corpus: Optional[Corpus]
     ) -> list:
         if not isinstance(entries, (list, tuple)):
             raise ConfigError(
                 f"PipelineBuilder: {stage}= must be a chain (a list), got "
                 f"{type(entries).__name__}"
             )
-        return [self._create(stage, entry, index) for entry in entries]
+        return [self._create(stage, entry, corpus) for entry in entries]
 
 
 def _completion_seam(generator: Any) -> Optional[Callable[[str], str]]:
@@ -252,19 +266,19 @@ def _entry_list(value: Any) -> list:
     return list(value)
 
 
-def _takes_index(cls: type) -> bool:
-    """Does this component's constructor accept a live `ChunkIndex`?
+def _takes_corpus(cls: type) -> bool:
+    """Does this component's constructor accept a live `Corpus`?
 
-    Asked of the signature rather than tracked in a list, so a new index-backed
+    Asked of the signature rather than tracked in a list, so a new corpus-backed
     component works here the day it is written — the Open/Closed rule the
     registry exists to keep. Components composed of *other components*
-    (`FusionRetriever`, `HydeRetriever`) take no index and are left to raise
+    (`FusionRetriever`, `HydeRetriever`) take no corpus and are left to raise
     their own, better-worded errors.
     """
     try:
         # signature(cls), not cls.__init__: it reports the constructor's
         # parameters without `self`, and doesn't reach through the instance.
-        return "index" in inspect.signature(cls).parameters
+        return "corpus" in inspect.signature(cls).parameters
     except (TypeError, ValueError):  # no introspectable signature
         return False
 

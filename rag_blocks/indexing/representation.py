@@ -66,6 +66,14 @@ class Representation(Component):
         lets it be overridden to A/B two encoders of the same kind."""
         return self.name
 
+    @property
+    def encoder(self) -> Optional[Component]:
+        """The underlying encoder/backend component this representation wraps
+        (an `Embedder`, `SparseEncoder`, or `LexicalIndex`) — for trial-log
+        introspection, which records *which* encoder ran under a space. `None`
+        for a representation that wraps no single component."""
+        return None
+
     # -- vector-backed family (default: not vector-backed) -------------------
 
     def declare_schema(self) -> Sequence[VectorSpec]:
@@ -139,6 +147,10 @@ class DenseRepresentation(Representation):
     def space(self) -> str:
         return self._space
 
+    @property
+    def encoder(self) -> Optional[Component]:
+        return self._embedder
+
     def declare_schema(self) -> Sequence[VectorSpec]:
         return [VectorSpec(self._space, "dense",
                            dimensions=self._embedder.dimensions,
@@ -187,6 +199,10 @@ class SparseRepresentation(Representation):
     def space(self) -> str:
         return self._space
 
+    @property
+    def encoder(self) -> Optional[Component]:
+        return self._encoder
+
     def declare_schema(self) -> Sequence[VectorSpec]:
         return [VectorSpec(self._space, "sparse")]
 
@@ -232,6 +248,10 @@ class LexicalRepresentation(Representation):
     @property
     def space(self) -> str:
         return self._space
+
+    @property
+    def encoder(self) -> Optional[Component]:
+        return self._index
 
     # declare_schema inherited -> ()  (self-managed: no vector space)
 

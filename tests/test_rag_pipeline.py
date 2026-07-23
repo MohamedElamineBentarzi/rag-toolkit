@@ -4,7 +4,11 @@ from rag_blocks.core.contracts import Answer, Query, Source
 from rag_blocks.core.errors import ConfigError
 from rag_blocks.embedding.hashing import HashingEmbedder
 from rag_blocks.generation.extractive import ExtractiveGenerator
-from rag_blocks.indexing.chunk_index import ChunkIndex
+from rag_blocks.indexing.corpus import Corpus
+from rag_blocks.indexing.representation import (
+    DenseRepresentation,
+    LexicalRepresentation,
+)
 from rag_blocks.pipeline import RagPipeline, TraceEvent
 from rag_blocks.retrieval.hybrid import HybridRetriever
 from rag_blocks.retrieval.index_retriever import IndexRetriever
@@ -111,11 +115,11 @@ def test_ask_before_indexing_is_graceful():
     assert answer.citations == []  # nothing indexed ⇒ no sources
 
 
-def test_index_populates_the_chunk_index():
+def test_index_populates_the_corpus():
     rag = RagPipeline(chunker=MarkdownChunker())
     rag.index(source())
-    # Two headings ⇒ two chunks written into the (default) ChunkIndex.
-    hits = rag.chunk_index.search("dense", "fruit", k=10)
+    # Two headings ⇒ two chunks written into the (default) Corpus.
+    hits = rag.corpus.search("dense", "fruit", k=10)
     assert len(hits) == 2
 
 
@@ -123,10 +127,15 @@ def test_default_retriever_is_derived_from_one_representation():
     assert isinstance(RagPipeline().retriever, IndexRetriever)
 
 
+def _dense_lexical_corpus():
+    return Corpus(MemoryVectorStore(), [
+        DenseRepresentation(HashingEmbedder()),
+        LexicalRepresentation(BM25Index()),
+    ])
+
+
 def test_default_retriever_is_hybrid_for_multi_representation():
-    index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder(),
-                       lexical=BM25Index())
-    rag = RagPipeline(chunk_index=index)
+    rag = RagPipeline(corpus=_dense_lexical_corpus())
     assert isinstance(rag.retriever, HybridRetriever)
 
 
@@ -136,21 +145,19 @@ def test_dense_convenience_constructor():
     assert "Paris" in rag.ask("capital of France", k=1).text
 
 
-def test_wiring_guard_rejects_a_retriever_over_a_different_index():
-    a = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder())
-    b = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder())
-    # A retriever wired to `b` must not be paired with chunk_index `a`.
+def test_wiring_guard_rejects_a_retriever_over_a_different_corpus():
+    a = Corpus(MemoryVectorStore(), [DenseRepresentation(HashingEmbedder())])
+    b = Corpus(MemoryVectorStore(), [DenseRepresentation(HashingEmbedder())])
+    # A retriever wired to `b` must not be paired with corpus `a`.
     try:
-        RagPipeline(chunk_index=a, retriever=IndexRetriever(b))
+        RagPipeline(corpus=a, retriever=IndexRetriever(b))
         assert False, "expected a wiring guard explosion"
     except ConfigError:
         pass
 
 
 def test_hybrid_end_to_end():
-    index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder(),
-                       lexical=BM25Index())
-    rag = RagPipeline(chunk_index=index, chunker=MarkdownChunker())
+    rag = RagPipeline(corpus=_dense_lexical_corpus(), chunker=MarkdownChunker())
     rag.index(source())
     assert "Paris" in rag.ask("capital of France", k=1).text
 

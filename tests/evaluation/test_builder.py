@@ -41,7 +41,7 @@ def test_representations_become_the_index():
     rag = PipelineBuilder().build(
         {**DENSE, "lexical": {"name": "bm25", "params": {}}}
     )
-    assert set(rag.chunk_index.representations()) == {"dense", "lexical"}
+    assert set(rag.corpus.representations()) == {"dense", "lexical"}
 
 
 def test_a_chain_stage_builds_in_order():
@@ -72,8 +72,8 @@ def test_each_build_gets_a_fresh_store():
     builder = PipelineBuilder()
     first = builder.build(DENSE)
     second = builder.build(DENSE)
-    assert first.chunk_index is not second.chunk_index
-    assert first.chunk_index._store is not second.chunk_index._store
+    assert first.corpus is not second.corpus
+    assert first.corpus._store is not second.corpus._store
 
 
 def test_the_store_factory_is_injectable():
@@ -117,11 +117,11 @@ def test_an_index_backed_retriever_gets_the_live_index():
         {**DENSE, "retriever": {"name": "index", "params": {"representation": "dense"}}}
     )
     assert rag.retriever.name == "index"
-    assert rag.retriever.index is rag.chunk_index  # the reason this class exists
+    assert rag.retriever.corpus is rag.corpus  # the reason this class exists
 
 
-def test_a_retriever_without_an_index_says_what_to_do():
-    with pytest.raises(ConfigError, match="needs an index"):
+def test_a_retriever_without_a_corpus_says_what_to_do():
+    with pytest.raises(ConfigError, match="needs a corpus"):
         PipelineBuilder().build({"retriever": {"name": "index"}})
 
 
@@ -133,7 +133,7 @@ def test_an_index_backed_refiner_also_gets_the_index():
         {**DENSE, "refine": [{"name": "neighbor-expander", "params": {"window": 2}}]}
     )
     expander = rag.query_pipeline.refine[0]
-    assert expander.index is rag.chunk_index
+    assert expander.corpus is rag.corpus
     assert expander.config.window == 2
 
 
@@ -144,8 +144,8 @@ def test_a_refiner_that_needs_no_index_is_built_plainly():
     assert rag.query_pipeline.refine[0].config.min_score == 0.2
 
 
-def test_an_index_backed_refiner_without_an_index_says_what_to_do():
-    with pytest.raises(ConfigError, match="needs an index"):
+def test_an_index_backed_refiner_without_a_corpus_says_what_to_do():
+    with pytest.raises(ConfigError, match="needs a corpus"):
         PipelineBuilder().build({"refine": [{"name": "neighbor-expander"}]})
 
 
@@ -168,7 +168,7 @@ def test_an_unknown_representation_fails_fast():
 
 def test_a_vector_store_from_the_spec_backs_the_index():
     rag = PipelineBuilder().build({**DENSE, "vector_store": {"name": "memory"}})
-    assert isinstance(rag.chunk_index._store, MemoryVectorStore)
+    assert isinstance(rag.corpus._store, MemoryVectorStore)
 
 
 def test_a_blob_store_from_the_spec_is_wired(tmp_path):
@@ -181,7 +181,7 @@ def test_a_blob_store_from_the_spec_is_wired(tmp_path):
 def test_omitting_infra_keeps_the_builders_own_defaults():
     # No store/blob_store in the spec -> the builder's store_factory + blob_store.
     rag = PipelineBuilder().build(DENSE)
-    assert isinstance(rag.chunk_index._store, MemoryVectorStore)
+    assert isinstance(rag.corpus._store, MemoryVectorStore)
     assert rag.indexing.blob_store is None
 
 

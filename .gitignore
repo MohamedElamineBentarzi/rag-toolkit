@@ -98,6 +98,7 @@ Thumbs.db
 # app/public/blocks.json IS committed (generated, but ships with the static site).
 studio/app/node_modules/
 studio/app/dist/
+studio/app/.vite/
 # The release step copies the built app here to bundle it into the wheel; it is
 # a build artifact, never committed (hatch `artifacts` includes it when present).
 rag_blocks/studio/_dist/

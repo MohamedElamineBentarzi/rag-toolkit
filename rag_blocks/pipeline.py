@@ -60,7 +60,8 @@ from .enrichment.base import Enricher
 from .generation.base import Generator
 from .generation.extractive import ExtractiveGenerator
 from .indexing.catalog import DocumentCatalog, raw_key
-from .indexing.chunk_index import ChunkIndex
+from .indexing.corpus import Corpus
+from .indexing.representation import DenseRepresentation
 from .indexing.sink import ChunkSink
 from .ingestion.detection import detect_format
 from .ingestion.parsers.auto import AutoParser
@@ -382,16 +383,16 @@ class RagPipeline:
     `ask(q)` — with live backends created once at the edge and shared by
     reference (DR-0001 v2, D6).
 
-    The shared thing is one `ChunkIndex`: it is the write path's flagship sink
+    The shared thing is one `Corpus`: it is the write path's flagship sink
     *and* the read path's backend, so query/corpus compatibility is structural,
-    not conventional. The write path fans out to the index (plus any
+    not conventional. The write path fans out to the corpus (plus any
     `extra_sinks`); the read path retrieves through a derived-or-supplied
     retriever, runs the `refine` chain, and generates a cited Answer.
 
     Defaults are the zero-dependency stack — a `MemoryVectorStore` +
-    `HashingEmbedder` `ChunkIndex`, `ExtractiveGenerator` — so `RagPipeline()`
+    `HashingEmbedder` `Corpus`, `ExtractiveGenerator` — so `RagPipeline()`
     works out of the box with no extras and no API key. Swap in real backends by
-    constructing the `ChunkIndex` yourself (see `.dense`) and passing it in.
+    constructing the `Corpus` yourself (see `.dense`) and passing it in.
 
     Retriever derivation (A1): no `retriever` ⇒ one representation gives an
     `IndexRetriever`, several give a `HybridRetriever` over all of them.
@@ -399,7 +400,7 @@ class RagPipeline:
 
     def __init__(
         self,
-        chunk_index: Optional[ChunkIndex] = None,
+        corpus: Optional[Corpus] = None,
         retriever: Optional[Retriever] = None,
         generator: Optional[Generator] = None,
         parser: Optional[Parser] = None,
@@ -412,32 +413,34 @@ class RagPipeline:
         batch_size: int = 32,
         trace: TraceHook = _noop_trace,
     ) -> None:
-        # Zero-config default index: memory store + hashing embedder.
-        if chunk_index is None:
-            chunk_index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder())
-        self.chunk_index = chunk_index
+        # Zero-config default corpus: memory store + one dense representation.
+        if corpus is None:
+            corpus = Corpus(
+                MemoryVectorStore(), [DenseRepresentation(HashingEmbedder())]
+            )
+        self.corpus = corpus
         self.generator = (
             generator if generator is not None else ExtractiveGenerator()
         )
         # Retriever: derive per A1, or validate a supplied one is wired to THIS
-        # index — the last way to recreate the write/read split (P6) becomes a
+        # corpus — the last way to recreate the write/read split (P6) becomes a
         # construction-time explosion.
         if retriever is None:
-            retriever = _derive_retriever(chunk_index)
+            retriever = _derive_retriever(corpus)
         else:
-            wired = getattr(retriever, "index", None)
-            if wired is not None and wired is not chunk_index:
+            wired = getattr(retriever, "corpus", None)
+            if wired is not None and wired is not corpus:
                 raise ConfigError(
                     "RagPipeline: the supplied retriever is wired to a "
-                    "different ChunkIndex than chunk_index — pass a retriever "
-                    "over this index, or let RagPipeline derive one."
+                    "different Corpus than corpus= — pass a retriever "
+                    "over this corpus, or let RagPipeline derive one."
                 )
         self.retriever = retriever
-        # The index is the flagship write sink; extra sinks (GraphRAG, alerts)
+        # The corpus is the flagship write sink; extra sinks (GraphRAG, alerts)
         # fan out beside it.
         self.indexing = IndexingPipeline(
             parser=parser, chunker=chunker, enrich=enrich,
-            sinks=[chunk_index, *extra_sinks], blob_store=blob_store,
+            sinks=[corpus, *extra_sinks], blob_store=blob_store,
             batch_size=batch_size, trace=trace,
         )
         self.query_pipeline = QueryPipeline(retriever, refine, fetch_k, trace)
@@ -452,16 +455,18 @@ class RagPipeline:
         **kw,
     ) -> "RagPipeline":
         """Convenience constructor for the 80% dense deployment: builds a
-        single-representation `ChunkIndex` and hands it to the composition
-        root. All other keywords forward to `__init__`."""
-        index = ChunkIndex(
+        single-representation `Corpus` and hands it to the composition root.
+        All other keywords forward to `__init__`."""
+        corpus = Corpus(
             store if store is not None else MemoryVectorStore(),
-            dense=embedder if embedder is not None else HashingEmbedder(),
+            [DenseRepresentation(
+                embedder if embedder is not None else HashingEmbedder()
+            )],
         )
-        return cls(chunk_index=index, **kw)
+        return cls(corpus=corpus, **kw)
 
     def index(self, sources: Source | Iterable[Source]) -> None:
-        """Ingest → chunk → enrich → write every representation to the index
+        """Ingest → chunk → enrich → write every representation to the corpus
         (and any extra sinks). Streaming and batched underneath."""
         for _ in self.indexing.index(sources):
             pass
@@ -526,13 +531,13 @@ class RagPipeline:
         return self.catalog
 
 
-def _derive_retriever(index: ChunkIndex) -> Retriever:
+def _derive_retriever(corpus: Corpus) -> Retriever:
     """A1 derivation: one representation ⇒ a plain `IndexRetriever`; several ⇒
     a `HybridRetriever` fusing all of them with RRF."""
-    reps = index.representations()
+    reps = corpus.representations()
     if len(reps) == 1:
-        return IndexRetriever(index)
-    return HybridRetriever(index)
+        return IndexRetriever(corpus)
+    return HybridRetriever(corpus)
 
 
 def _ms(start: float) -> float:

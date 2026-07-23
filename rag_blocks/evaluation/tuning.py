@@ -30,7 +30,7 @@ from ..core.component import Component
 from ..core.contracts import Query, Source
 from ..core.errors import ConfigError, RagBlocksError
 from ..core.registry import registry
-from ..indexing.chunk_index import ChunkIndex
+from ..indexing.corpus import Corpus
 from ..pipeline import RagPipeline
 from .base import EvalOutcome, EvalSample, Evaluator
 from .builder import PipelineBuilder, PipelineFactory
@@ -332,10 +332,10 @@ def _describe(rag: RagPipeline) -> dict:
         "retriever": rag.retriever.describe(),
         "generator": rag.generator.describe(),
     }
-    index = rag.chunk_index
-    if index is not None:
-        described["index"] = index.describe()
-        described.update(_representations(index))
+    corpus = rag.corpus
+    if corpus is not None:
+        described["index"] = corpus.describe()
+        described.update(_representations(corpus))
     # Chain stages are recorded even when EMPTY. The empty chain is a choice —
     # "no reranker" is the baseline a cross-encoder has to beat — so omitting
     # it would hide the option the comparison exists to make. It would also
@@ -346,11 +346,11 @@ def _describe(rag: RagPipeline) -> dict:
     return described
 
 
-def _representations(index: ChunkIndex) -> dict[str, Any]:
-    """The index's representation components, keyed by SearchSpace stage name.
+def _representations(corpus: Corpus) -> dict[str, Any]:
+    """The corpus's encoder components, keyed by SearchSpace stage name.
 
     Grouped by each component's own `kind` and mapped back through
-    `STAGE_KINDS`, so this never has to know how a `ChunkIndex` stores its
+    `STAGE_KINDS`, so this never has to know how a `Corpus` stores its
     representations — it asks.
 
     Single-representation mounts (the common case) report one describe; a
@@ -359,7 +359,7 @@ def _representations(index: ChunkIndex) -> dict[str, Any]:
     """
     kind_to_stage = {kind: stage for stage, kind in STAGE_KINDS.items()}
     grouped: dict[str, list[Any]] = {}
-    for component in index.encoders().values():
+    for component in corpus.encoders().values():
         stage = kind_to_stage.get(component.kind)
         if stage is not None:
             grouped.setdefault(stage, []).append(component.describe())
@@ -379,8 +379,8 @@ def _fingerprints(rag: RagPipeline) -> dict[str, str]:
         "retriever": rag.retriever.fingerprint(),
         "generator": rag.generator.fingerprint(),
     }
-    if rag.chunk_index is not None:
-        prints["index"] = rag.chunk_index.fingerprint()
+    if rag.corpus is not None:
+        prints["index"] = rag.corpus.fingerprint()
     for i, enricher in enumerate(rag.indexing.enrich):
         prints[f"enrich.{i}"] = enricher.fingerprint()
     for i, refiner in enumerate(rag.query_pipeline.refine):

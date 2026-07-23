@@ -42,8 +42,8 @@ from rag_blocks.storage.vector_store import VectorStore
 _STORAGE_BASES = (BlobStore, VectorStore)
 
 #: Constructor parameters that are wiring, not settable spec params: `self` and
-#: the two the builder supplies itself (`config`, the live `index`).
-_WIRING_PARAMS = frozenset({"self", "config", "index"})
+#: the two the builder supplies itself (`config`, the live `corpus`).
+_WIRING_PARAMS = frozenset({"self", "config", "corpus"})
 
 #: Composition the builder wires from *nested sub-specs* (`inner`, `retrievers`)
 #: or the generator's LLM seam (`complete`) — so these params don't block export
@@ -182,11 +182,12 @@ def _component(stage: str, name: str) -> dict:
 
 
 def _takes_index(cls: type) -> bool:
-    """Mirror of PipelineBuilder._takes_index: does the constructor accept a
-    live index? Asked of the signature, so it stays true for any future
-    index-backed component."""
+    """Mirror of PipelineBuilder._takes_corpus: does the constructor accept a
+    live corpus? Asked of the signature, so it stays true for any future
+    corpus-backed component. (The emitted field stays `takes_index` until the
+    Studio manifest rework — DR-0004 D7.)"""
     try:
-        return "index" in inspect.signature(cls).parameters
+        return "corpus" in inspect.signature(cls).parameters
     except (TypeError, ValueError):
         return False
 

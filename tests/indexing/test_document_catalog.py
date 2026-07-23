@@ -18,7 +18,7 @@ def _rag(tmp_path):
 
 def _doc_id(rag):
     # Every chunk shares the doc_id prefix; grab it from a search hit.
-    hit = rag.chunk_index.search("dense", "capital", k=1)[0]
+    hit = rag.corpus.search("dense", "capital", k=1)[0]
     return hit.chunk.doc_id
 
 
