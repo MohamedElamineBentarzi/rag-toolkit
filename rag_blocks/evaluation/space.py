@@ -34,7 +34,10 @@ from typing import Any, Iterator, Mapping
 
 from ..core.errors import ConfigError
 
-__all__ = ["Choice", "choice", "SearchSpace", "STAGE_KINDS", "CHAIN_STAGES"]
+__all__ = [
+    "Choice", "choice", "SearchSpace",
+    "STAGE_KINDS", "INFRA_KINDS", "SPEC_KINDS", "CHAIN_STAGES",
+]
 
 #: Pipeline stage → registry kind. The keys are the vocabulary a SearchSpace
 #: accepts; the values are what `registry.create` wants. Two names for one
@@ -57,6 +60,22 @@ STAGE_KINDS: Mapping[str, str] = {
     "refine": "refiner",
     "generator": "generator",
 }
+
+#: Infrastructure a pipeline is *given*, not a tunable stage: the vector store
+#: the ChunkIndex persists into, and the blob store that backs parse-caching +
+#: raw capture. Kept OUT of STAGE_KINDS on purpose — they carry no pipeline
+#: order and a SearchSpace does not tune them (a live Qdrant/MinIO is deployment,
+#: not a knob). A single built spec MAY carry them; `PipelineBuilder` wires them
+#: in, else falls back to its own `store_factory` / `blob_store` defaults.
+INFRA_KINDS: Mapping[str, str] = {
+    "store": "vector_store",
+    "blob_store": "blob_store",
+}
+
+#: Everything a concrete pipeline spec may name: tunable stages + infrastructure.
+#: `validate_spec` and `PipelineBuilder` accept these keys; `SearchSpace` accepts
+#: only `STAGE_KINDS`.
+SPEC_KINDS: Mapping[str, str] = {**STAGE_KINDS, **INFRA_KINDS}
 
 #: Stages that are a *chain* of components rather than one.
 CHAIN_STAGES = frozenset({"refine", "enrich"})

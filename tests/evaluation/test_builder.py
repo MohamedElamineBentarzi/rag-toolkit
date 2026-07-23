@@ -163,6 +163,28 @@ def test_an_unknown_representation_fails_fast():
         )
 
 
+# -- infrastructure: the store and blob store from the spec ---------------
+
+
+def test_a_vector_store_from_the_spec_backs_the_index():
+    rag = PipelineBuilder().build({**DENSE, "store": {"name": "memory"}})
+    assert isinstance(rag.chunk_index._store, MemoryVectorStore)
+
+
+def test_a_blob_store_from_the_spec_is_wired(tmp_path):
+    rag = PipelineBuilder().build(
+        {**DENSE, "blob_store": {"name": "local", "params": {"root": str(tmp_path)}}}
+    )
+    assert isinstance(rag.indexing.blob_store, LocalBlobStore)
+
+
+def test_omitting_infra_keeps_the_builders_own_defaults():
+    # No store/blob_store in the spec -> the builder's store_factory + blob_store.
+    rag = PipelineBuilder().build(DENSE)
+    assert isinstance(rag.chunk_index._store, MemoryVectorStore)
+    assert rag.indexing.blob_store is None
+
+
 # -- fail fast ------------------------------------------------------------
 
 

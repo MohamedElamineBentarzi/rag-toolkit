@@ -54,7 +54,7 @@ from ..pipeline import RagPipeline, TraceHook, _noop_trace
 from ..storage.base import BlobStore
 from ..storage.memory_store import MemoryVectorStore
 from ..storage.vector_store import VectorStore
-from .space import CHAIN_STAGES, STAGE_KINDS
+from .space import CHAIN_STAGES, SPEC_KINDS
 
 __all__ = ["PipelineBuilder", "PipelineFactory", "validate_spec"]
 
@@ -108,15 +108,25 @@ class PipelineBuilder:
         dense = self._create("embedder", spec["embedder"], None) if "embedder" in spec else None
         sparse = self._create("sparse", spec["sparse"], None) if "sparse" in spec else None
         lexical = self._create("lexical", spec["lexical"], None) if "lexical" in spec else None
+        # The vector store the index persists into: a spec-named one (Qdrant,
+        # in-memory) if given, else the builder's own factory. A fresh instance
+        # per build either way (registry.create builds one), so trials never
+        # share a store — the isolation invariant holds for both paths.
+        store = self._create("store", spec["store"], None) if "store" in spec else self.store_factory()
         index: Optional[ChunkIndex] = None
         if dense is not None or sparse is not None or lexical is not None:
-            index = ChunkIndex(
-                self.store_factory(), dense=dense, sparse=sparse, lexical=lexical
-            )
+            index = ChunkIndex(store, dense=dense, sparse=sparse, lexical=lexical)
 
+        # The truth/parse-cache store: spec-named (MinIO, local) or the builder's.
+        # Its credentials never live in the spec (§7.4) — the adapter reads them
+        # from the environment, so a spec names *which* store, not its secrets.
+        blob_store = (
+            self._create("blob_store", spec["blob_store"], None)
+            if "blob_store" in spec else self.blob_store
+        )
         kwargs: dict[str, Any] = {
             "chunk_index": index,
-            "blob_store": self.blob_store,
+            "blob_store": blob_store,
             "trace": self.trace,
             "fetch_k": self.fetch_k,
         }
@@ -142,10 +152,10 @@ class PipelineBuilder:
         instead of a search.
         """
         name, params = _unpack(stage, entry)
-        cls = registry.get(STAGE_KINDS[stage], name)
+        cls = registry.get(SPEC_KINDS[stage], name)
         if not _takes_index(cls):
             try:
-                return registry.create(STAGE_KINDS[stage], name, **params)
+                return registry.create(SPEC_KINDS[stage], name, **params)
             except ConfigError as exc:
                 # Name the stage: "unknown field 'sze'" is a lot less useful
                 # than knowing which of nine stages spelled it.
@@ -211,10 +221,10 @@ def validate_spec(spec: Mapping[str, Any]) -> None:
         raise ConfigError(
             f"spec must be a mapping of stage -> entry, got {type(spec).__name__}"
         )
-    unknown = set(spec) - set(STAGE_KINDS)
+    unknown = set(spec) - set(SPEC_KINDS)
     if unknown:
         raise ConfigError(
-            f"unknown stage(s) {sorted(unknown)}; known: {sorted(STAGE_KINDS)}"
+            f"unknown stage(s) {sorted(unknown)}; known: {sorted(SPEC_KINDS)}"
         )
     for stage, value in spec.items():
         if stage in CHAIN_STAGES:

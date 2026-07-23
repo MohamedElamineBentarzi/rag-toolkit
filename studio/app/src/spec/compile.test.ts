@@ -47,6 +47,23 @@ describe("compileSpec (graph -> spec)", () => {
   });
 });
 
+describe("infrastructure blocks (store + blob_store)", () => {
+  it("emits them, dropping the store's and blob store's secrets", () => {
+    const nodes = [
+      node("s", "store", "qdrant", { url: "http://x:6333", api_key: "sk-leak" }),
+      node("b", "blob_store", "minio", { endpoint: "s3.example.com:9000", access_key: "AK", secret_key: "SK" }),
+    ];
+    const spec = compileSpec(nodes, [], mIndex) as {
+      store: { name: string; params: Record<string, unknown> };
+      blob_store: { params: Record<string, unknown> };
+    };
+    expect(spec.store).toEqual({ name: "qdrant", params: { url: "http://x:6333" } });
+    expect(spec.blob_store.params).not.toHaveProperty("access_key");
+    expect(spec.blob_store.params).not.toHaveProperty("secret_key");
+    expect(spec.blob_store.params).toHaveProperty("endpoint", "s3.example.com:9000");
+  });
+});
+
 describe("round trip (import -> compile)", () => {
   it("reproduces a spec through the graph and back", () => {
     const spec = {
@@ -58,5 +75,18 @@ describe("round trip (import -> compile)", () => {
     const { nodes, edges } = importSpec(spec, mIndex);
     const back = compileSpec(nodes, edges, mIndex);
     expect(back).toEqual(spec);
+  });
+
+  it("round-trips a spec with a vector store and blob store", () => {
+    const spec = {
+      parser: { name: "plaintext", params: {} },
+      chunker: { name: "fixed", params: { chunk_chars: 200 } },
+      embedder: { name: "hashing", params: { dimensions: 128 } },
+      store: { name: "memory", params: {} },
+      blob_store: { name: "local", params: { root: "/data" } },
+      generator: { name: "extractive", params: {} },
+    };
+    const { nodes, edges } = importSpec(spec, mIndex);
+    expect(compileSpec(nodes, edges, mIndex)).toEqual(spec);
   });
 });

@@ -31,7 +31,7 @@ from typing import Any
 import rag_blocks  # noqa: F401  (import side effect: registers all built-ins)
 from rag_blocks.core.component import Component
 from rag_blocks.core.registry import registry
-from rag_blocks.evaluation.space import CHAIN_STAGES, STAGE_KINDS
+from rag_blocks.evaluation.space import CHAIN_STAGES, SPEC_KINDS
 
 #: Constructor parameters that are wiring, not settable spec params: `self` and
 #: the two the builder supplies itself (`config`, the live `index`).
@@ -47,8 +47,8 @@ _WIRING_PARAMS = frozenset({"self", "config", "index"})
 #: fingerprint ignores `max_tokens`; flagged to the owner separately.)
 _SECRET_MARKERS = (
     "api_key", "apikey", "secret", "password", "credential",
-    "access_token", "refresh_token", "auth_token", "private_key",
-    "authorization",
+    "access_key", "access_token", "refresh_token", "auth_token",
+    "private_key", "authorization",
 )
 
 
@@ -67,7 +67,9 @@ def _is_secret_param(name: str) -> bool:
 CHUNKS = "Chunk[]"
 SCORED = "ScoredChunk[]"
 STAGE_IO: dict[str, dict[str, Any]] = {
-    "parser":    {"in": ["Source"],           "out": "Document"},
+    # The blob store backs parse-caching + raw capture, which happen at parse
+    # time — so it is an (optional) dependency of the parser.
+    "parser":    {"in": ["Source", "BlobStore"], "out": "Document"},
     "chunker":   {"in": ["Document"],          "out": CHUNKS},
     "enrich":    {"in": [CHUNKS],              "out": CHUNKS},
     "embedder":  {"in": [CHUNKS],              "out": "Representation"},
@@ -76,13 +78,18 @@ STAGE_IO: dict[str, dict[str, Any]] = {
     "retriever": {"in": ["Query", "Index"],    "out": SCORED},
     "refine":    {"in": [SCORED],              "out": SCORED},
     "generator": {"in": [SCORED],              "out": "Answer"},
+    # Infrastructure: no data inputs; each is a dependency wired into a node
+    # (Store -> ChunkIndex, BlobStore -> parser).
+    "store":      {"in": [],                   "out": "Store"},
+    "blob_store": {"in": [],                   "out": "BlobStore"},
 }
 
 # One synthetic node, not a registry stage: representation blocks
-# (embedder/sparse/lexical) fan into it and it feeds retrievers — mirroring a
-# live ChunkIndex being wired from those backends (DR-0001 v2). It is why the
-# spec keys embedder/sparse/lexical are separate rather than one "index" entry.
-INDEX_NODE = {"kind": "index", "in": ["Representation"], "out": "Index",
+# (embedder/sparse/lexical) fan into it, a vector Store backs it, and it feeds
+# retrievers — mirroring a live ChunkIndex being wired from those backends
+# (DR-0001 v2). It is why the spec keys embedder/sparse/lexical/store are
+# separate rather than one "index" entry.
+INDEX_NODE = {"kind": "index", "in": ["Representation", "Store"], "out": "Index",
               "synthetic": True}
 
 #: A color per contract type, so a port's type is legible at a glance and an
@@ -93,6 +100,8 @@ TYPE_COLORS: dict[str, str] = {
     CHUNKS:          "#43b581",
     "Representation": "#c586f0",
     "Index":         "#e0a458",
+    "Store":         "#8f7dff",
+    "BlobStore":     "#c08a52",
     "Query":         "#5ec8c8",
     SCORED:          "#e06c9f",
     "Answer":        "#d4d44a",
@@ -103,7 +112,7 @@ def build_manifest() -> dict:
     """Introspect the registry into the Studio manifest dict."""
     stages = _stages()
     components = []
-    for stage, reg_kind in STAGE_KINDS.items():
+    for stage, reg_kind in SPEC_KINDS.items():
         for name in registry.available(reg_kind):
             components.append(_component(stage, name))
     return {
@@ -114,10 +123,10 @@ def build_manifest() -> dict:
 
 
 def _stages() -> list[dict]:
-    """Every spec stage in pipeline order (STAGE_KINDS order is load-bearing),
-    plus the synthetic Index node."""
+    """Every spec key in pipeline order (SPEC_KINDS order is load-bearing for
+    stages; infra follows), plus the synthetic Index node."""
     out = []
-    for stage in STAGE_KINDS:  # dict preserves the pipeline order
+    for stage in SPEC_KINDS:  # dict preserves order: stages, then infra
         io = STAGE_IO[stage]
         out.append({
             "kind": stage,
@@ -131,7 +140,7 @@ def _stages() -> list[dict]:
 
 
 def _component(stage: str, name: str) -> dict:
-    cls = registry.get(STAGE_KINDS[stage], name)
+    cls = registry.get(SPEC_KINDS[stage], name)
     exportable, blocker = _exportability(cls)
     entry: dict[str, Any] = {
         "kind": stage,

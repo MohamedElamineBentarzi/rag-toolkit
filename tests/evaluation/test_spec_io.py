@@ -158,6 +158,15 @@ def test_validate_rejects_non_mapping_params():
         validate_spec({"chunker": {"name": "fixed", "params": [1, 2]}})
 
 
+def test_validate_accepts_infrastructure_keys():
+    # store (vector_store) and blob_store are valid spec keys alongside stages.
+    validate_spec({
+        "embedder": {"name": "hashing"},
+        "store": {"name": "memory"},
+        "blob_store": {"name": "local", "params": {"root": "/data"}},
+    })
+
+
 def test_validate_stops_at_structure_not_names():
     # An unknown component name is the builder's to catch, not this gate — so a
     # structurally sound spec with a nonexistent chunker validates fine here.

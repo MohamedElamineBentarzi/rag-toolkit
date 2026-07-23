@@ -507,13 +507,146 @@
       ],
       "takes_index": false,
       "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: a named, typed, multi-vector upsert-and-search index.",
+      "exportable": true,
+      "kind": "store",
+      "name": "memory",
+      "params": [],
+      "takes_index": false,
+      "version": "0.2.0"
+    },
+    {
+      "doc": "Strategy interface: a named, typed, multi-vector upsert-and-search index.",
+      "exportable": true,
+      "kind": "store",
+      "name": "qdrant",
+      "params": [
+        {
+          "default": "rag_blocks",
+          "name": "collection",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "url",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "location",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "path",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "api_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": false,
+          "name": "prefer_grpc",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "name": "recreate_on_mismatch",
+          "required": false,
+          "type": "bool"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.2.1"
+    },
+    {
+      "doc": "Store blobs as files under a root directory.",
+      "exportable": true,
+      "kind": "blob_store",
+      "name": "local",
+      "params": [
+        {
+          "default": ".rag_cache/blobs",
+          "name": "root",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Store blobs as objects in an S3-compatible bucket.",
+      "exportable": true,
+      "kind": "blob_store",
+      "name": "minio",
+      "params": [
+        {
+          "default": "localhost:9000",
+          "name": "endpoint",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": "rag-blocks",
+          "name": "bucket",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "access_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "secret_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": false,
+          "name": "secure",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": null,
+          "name": "region",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": true,
+          "name": "make_bucket",
+          "required": false,
+          "type": "bool"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
     }
   ],
   "stages": [
     {
       "chain": false,
       "in": [
-        "Source"
+        "Source",
+        "BlobStore"
       ],
       "kind": "parser",
       "out": "Document",
@@ -593,8 +726,23 @@
       "single": true
     },
     {
+      "chain": false,
+      "in": [],
+      "kind": "store",
+      "out": "Store",
+      "single": true
+    },
+    {
+      "chain": false,
+      "in": [],
+      "kind": "blob_store",
+      "out": "BlobStore",
+      "single": true
+    },
+    {
       "in": [
-        "Representation"
+        "Representation",
+        "Store"
       ],
       "kind": "index",
       "out": "Index",
@@ -604,6 +752,9 @@
   "types": {
     "Answer": {
       "color": "#d4d44a"
+    },
+    "BlobStore": {
+      "color": "#c08a52"
     },
     "Chunk[]": {
       "color": "#43b581"
@@ -625,6 +776,9 @@
     },
     "Source": {
       "color": "#8b8b9e"
+    },
+    "Store": {
+      "color": "#8f7dff"
     }
   }
 }

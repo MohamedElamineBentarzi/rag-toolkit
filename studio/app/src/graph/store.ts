@@ -76,22 +76,30 @@ export const useStudio = create<StudioState>((set, get) => {
         data: { kind, name, params },
       };
 
-      // Ensure the synthetic ChunkIndex exists whenever a representation or an
-      // index-backed block appears — the two things that need it.
+      // Ensure the synthetic ChunkIndex exists whenever something that attaches
+      // to it appears: a representation, a vector store, or an index-backed
+      // block. The blob store attaches to the parser instead, not the index.
       const next = [...nodes, node];
-      const needsIndex = REPRESENTATION_KINDS.includes(kind) || comp?.takes_index;
+      const needsIndex =
+        REPRESENTATION_KINDS.includes(kind) || kind === "store" || comp?.takes_index;
       if (needsIndex && !next.some((n) => n.data.kind === "index")) {
         next.push(makeIndexNode(next.length));
       }
 
-      // Auto-wire so the index is never an orphan on the canvas: a new
-      // representation feeds it; a new index-backed block reads from it. The
-      // user can still rewire freely — this is just a sensible default edge.
+      // Auto-wire so a new block is never an orphan on the canvas — a sensible
+      // default edge the user can still rewire: representations and the store
+      // feed the index; index-backed blocks read from it; the blob store backs
+      // the parser (where caching + raw capture happen).
       let nextEdges = edges;
       const indexNode = next.find((n) => n.data.kind === "index");
-      if (indexNode) {
+      if (kind === "blob_store") {
+        const parser = next.find((n) => n.data.kind === "parser");
+        if (parser) nextEdges = addEdge(makeEdge(node.id, "BlobStore", parser.id, mIndex), nextEdges);
+      } else if (indexNode) {
         if (REPRESENTATION_KINDS.includes(kind)) {
           nextEdges = addEdge(makeEdge(node.id, "Representation", indexNode.id, mIndex), nextEdges);
+        } else if (kind === "store") {
+          nextEdges = addEdge(makeEdge(node.id, "Store", indexNode.id, mIndex), nextEdges);
         } else if (comp?.takes_index) {
           nextEdges = addEdge(makeEdge(indexNode.id, "Index", node.id, mIndex), nextEdges);
         }

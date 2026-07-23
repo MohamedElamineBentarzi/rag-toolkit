@@ -9,6 +9,7 @@ import type { BlockNode, BlockEdge } from "../graph/model";
 
 const SINGLE_STAGES = [
   "parser", "chunker", "embedder", "sparse", "lexical", "retriever", "generator",
+  "store", "blob_store",
 ];
 const CHAIN_STAGES = ["enrich", "refine"];
 

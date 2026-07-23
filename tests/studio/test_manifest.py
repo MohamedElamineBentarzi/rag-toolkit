@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from rag_blocks.core.registry import registry
-from rag_blocks.evaluation.space import CHAIN_STAGES, STAGE_KINDS
+from rag_blocks.evaluation.space import CHAIN_STAGES, SPEC_KINDS
 from rag_blocks.studio.manifest import build_manifest
 
 
@@ -30,7 +30,7 @@ def test_every_registered_component_appears(manifest):
     # The whole point: nothing registered is missing from the palette.
     expected = {
         (stage, name)
-        for stage, reg_kind in STAGE_KINDS.items()
+        for stage, reg_kind in SPEC_KINDS.items()
         for name in registry.available(reg_kind)
     }
     got = {(c["kind"], c["name"]) for c in manifest["components"]}
@@ -40,13 +40,13 @@ def test_every_registered_component_appears(manifest):
 def test_every_component_round_trips_to_a_real_class(manifest):
     # A manifest entry must name a component the registry can actually build.
     for c in manifest["components"]:
-        cls = registry.get(STAGE_KINDS[c["kind"]], c["name"])
+        cls = registry.get(SPEC_KINDS[c["kind"]], c["name"])
         assert cls.name == c["name"]
 
 
 def test_stages_are_in_pipeline_order_plus_the_synthetic_index(manifest):
     kinds = [s["kind"] for s in manifest["stages"]]
-    assert kinds == list(STAGE_KINDS) + ["index"]
+    assert kinds == list(SPEC_KINDS) + ["index"]
     chain = {s["kind"] for s in manifest["stages"] if s.get("chain")}
     assert chain == set(CHAIN_STAGES)
 
@@ -85,6 +85,28 @@ def test_composites_are_marked_not_exportable(manifest):
         assert c["exportable"] is False
         assert "not_exportable_reason" in c
     assert _by_name(manifest, "fixed")["exportable"] is True
+
+
+def test_store_and_blob_store_are_blocks(manifest):
+    # The infrastructure the ChunkIndex/pipeline is built on, now spec-expressible.
+    names = {(c["kind"], c["name"]) for c in manifest["components"]}
+    assert ("store", "qdrant") in names
+    assert ("store", "memory") in names
+    assert ("blob_store", "minio") in names
+    assert ("blob_store", "local") in names
+
+
+def test_index_gains_a_store_port_and_parser_a_blobstore_port(manifest):
+    stage = {s["kind"]: s for s in manifest["stages"]}
+    assert "Store" in stage["index"]["in"]        # Store -> ChunkIndex
+    assert "BlobStore" in stage["parser"]["in"]   # BlobStore -> parser
+    assert stage["store"]["out"] == "Store"
+    assert stage["blob_store"]["out"] == "BlobStore"
+
+
+def test_minio_credentials_are_secret(manifest):
+    secret = {p["name"] for p in _by_name(manifest, "minio")["params"] if p.get("secret")}
+    assert {"access_key", "secret_key"} <= secret
 
 
 def test_only_real_credentials_are_secret(manifest):

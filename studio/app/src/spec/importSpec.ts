@@ -58,15 +58,21 @@ export function importSpec(
   const chunker = single("chunker");
   const enrichers = chain("enrich");
   const reps = REPRESENTATIONS.map((k) => single(k)).filter((n): n is BlockNode => !!n);
+  const store = single("store");
   const retriever = single("retriever");
   const refiners = chain("refine");
   const generator = single("generator");
+  const blob = single("blob_store");
 
-  const needsIndex = reps.length > 0 || mIndex.component(retriever?.data.kind ?? "", retriever?.data.name ?? "")?.takes_index;
+  const retrieverTakesIndex = mIndex.component(
+    retriever?.data.kind ?? "", retriever?.data.name ?? "",
+  )?.takes_index;
+  const needsIndex = reps.length > 0 || !!store || !!retrieverTakesIndex;
   const index = needsIndex ? mk("index", "ChunkIndex", {}) : null;
   if (index) index.data.synthetic = true;
 
   // Wire the backbone by type.
+  if (blob && parser) connect(blob, "BlobStore", parser);
   if (parser && chunker) connect(parser, "Document", chunker);
   let chunkTail = chunker;
   for (const e of enrichers) {
@@ -76,6 +82,7 @@ export function importSpec(
   if (chunkTail) for (const r of reps) connect(chunkTail, "Chunk[]", r);
   if (index) {
     for (const r of reps) connect(r, "Representation", index);
+    if (store) connect(store, "Store", index);
     if (retriever) connect(index, "Index", retriever);
   }
   let scoredTail = retriever;
