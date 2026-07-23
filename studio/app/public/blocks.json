@@ -237,10 +237,9 @@
     },
     {
       "doc": "Strategy interface: a term-based search index.",
-      "exportable": false,
+      "exportable": true,
       "kind": "lexical",
       "name": "bm25",
-      "not_exportable_reason": "needs 'store', which a flat spec can't express",
       "params": [
         {
           "default": 1.5,

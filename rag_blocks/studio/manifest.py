@@ -32,6 +32,14 @@ import rag_blocks  # noqa: F401  (import side effect: registers all built-ins)
 from rag_blocks.core.component import Component
 from rag_blocks.core.registry import registry
 from rag_blocks.evaluation.space import CHAIN_STAGES, SPEC_KINDS
+from rag_blocks.storage.base import BlobStore
+from rag_blocks.storage.vector_store import VectorStore
+
+#: Storage backends are *optional injected infra*, not composition: a component
+#: that takes one (BM25Index's optional BlobStore for persistence) runs fine
+#: without it — the flat spec just omits it. So, unlike a Retriever/Callable
+#: dependency, a storage-backend param must NOT mark a component non-exportable.
+_STORAGE_BASES = (BlobStore, VectorStore)
 
 #: Constructor parameters that are wiring, not settable spec params: `self` and
 #: the two the builder supplies itself (`config`, the live `index`).
@@ -174,16 +182,20 @@ def _takes_index(cls: type) -> bool:
 def _exportability(cls: type) -> tuple[bool, str | None]:
     """Can this component be built from a flat `{name, params}` spec?
 
-    It can, unless a constructor parameter's *type* is another component or a
-    callable — FusionRetriever's `retrievers: Sequence[Retriever]`,
-    HydeRetriever's `inner: Retriever` / `complete: Callable`. Those all default
-    to None (so they can be built by name and raise later), so the tell is the
-    type, not required-ness: JSON can carry a chunk size, never a live retriever
-    or a function. Same limit `PipelineBuilder` hits, detected once here so the
-    palette can grey those blocks out honestly.
+    It can, unless a constructor parameter is a *composition* dependency a flat
+    spec can't carry: another pipeline component or a callable —
+    FusionRetriever's `retrievers: Sequence[Retriever]`, HydeRetriever's
+    `inner: Retriever` / `complete: Callable`. Those default to None (so they can
+    be built by name and raise later), so the tell is the type, not
+    required-ness: JSON holds a chunk size, never a live retriever or a function.
+
+    A storage-backend param (BM25Index's optional `store: BlobStore`) is the
+    exception: it's optional infra, not composition, so it doesn't block — the
+    component just runs unpersisted. Same limit `PipelineBuilder` hits, detected
+    once here so the palette greys out only the blocks that truly can't export.
     """
     for pname, hint in _ctor_params(cls):
-        if _is_component_or_callable(hint):
+        if _blocks_export(hint):
             return False, pname
     return True, None
 
@@ -273,7 +285,9 @@ def _ctor_default(cls: type, pname: str) -> Any:
 
 def _is_component_or_callable(hint: Any) -> bool:
     """Does this annotation reference a Component subclass or a Callable — i.e.
-    something a flat JSON spec can't carry? Walks Optional/Sequence/Union args."""
+    something a flat JSON spec can't carry as a settable param? Walks
+    Optional/Sequence/Union args. Used to drop such params from the config form
+    (a store or a sub-retriever isn't a text field)."""
     if hint is inspect.Parameter.empty or hint is None:
         return False
     origin = typing.get_origin(hint)
@@ -283,6 +297,26 @@ def _is_component_or_callable(hint: Any) -> bool:
     if args:
         return any(_is_component_or_callable(a) for a in args)
     return isinstance(hint, type) and issubclass(hint, Component)
+
+
+def _blocks_export(hint: Any) -> bool:
+    """Like `_is_component_or_callable`, but a storage backend
+    (BlobStore/VectorStore) does NOT count — it's optional infra a flat spec
+    omits, not a composition dependency. This is the line between "can't set this
+    param" (both) and "can't build this component at all" (only this)."""
+    if hint is inspect.Parameter.empty or hint is None:
+        return False
+    origin = typing.get_origin(hint)
+    if origin is collections.abc.Callable:
+        return True
+    args = [a for a in typing.get_args(hint) if a is not type(None)]
+    if args:
+        return any(_blocks_export(a) for a in args)
+    return (
+        isinstance(hint, type)
+        and issubclass(hint, Component)
+        and not issubclass(hint, _STORAGE_BASES)
+    )
 
 
 def _param_type(hint: Any) -> tuple[str, list | None]:

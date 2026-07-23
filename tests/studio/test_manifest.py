@@ -87,6 +87,16 @@ def test_composites_are_marked_not_exportable(manifest):
     assert _by_name(manifest, "fixed")["exportable"] is True
 
 
+def test_optional_storage_backend_does_not_block_export(manifest):
+    # BM25Index takes an optional BlobStore for persistence — it runs in-memory
+    # without one, so it's fully usable from a flat spec (unlike the composites,
+    # whose component/callable deps are essential). The backend isn't a settable
+    # param either.
+    bm25 = _by_name(manifest, "bm25")
+    assert bm25["exportable"] is True
+    assert "store" not in [p["name"] for p in bm25["params"]]
+
+
 def test_store_and_blob_store_are_blocks(manifest):
     # The infrastructure the ChunkIndex/pipeline is built on, now spec-expressible.
     names = {(c["kind"], c["name"]) for c in manifest["components"]}
