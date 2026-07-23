@@ -19,7 +19,7 @@ import { isValidConnection as checkConnection } from "./graph/validate";
 import type { BlockNode as BlockNodeType, BlockEdge } from "./graph/model";
 import { Palette } from "./panels/Palette";
 import { Inspector } from "./panels/Inspector";
-import { Problems } from "./panels/Problems";
+import { StatusPill } from "./panels/StatusPill";
 import { loadManifest } from "./manifest/load";
 import { compileSpec } from "./spec/compile";
 import { validateSpec } from "./spec/validateSpec";
@@ -63,12 +63,6 @@ function Studio() {
       })
       .catch((e) => alert(String(e)));
   }, [setManifest, fitView]);
-
-  // Reframe after a drawer slides, so the canvas resize keeps everything in view.
-  useEffect(() => {
-    const t = setTimeout(() => fitView({ padding: 0.2 }), 320);
-    return () => clearTimeout(t);
-  }, [leftOpen, rightOpen, fitView]);
 
   // Only offer a connection to React Flow if the contract types match — this is
   // where the "invalid connections refuse to form" behavior lives.
@@ -136,7 +130,6 @@ function Studio() {
               style={{ background: "transparent" }}
             />
           </ReactFlow>
-          <Problems />
         </div>
 
         <aside className={`drawer right ${rightOpen ? "open" : ""}`}>
@@ -209,6 +202,7 @@ function Toolbar(props: {
         <span className="brand">rag-blocks</span>
         <span className="sub">studio</span>
       </div>
+      <StatusPill />
       <button onClick={deleteSelected}>Delete</button>
       <button onClick={() => { if (confirm("Clear the canvas?")) clear(); }}>Clear</button>
       <button onClick={() => fileRef.current?.click()}>Import</button>
