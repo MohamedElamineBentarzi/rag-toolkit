@@ -88,7 +88,10 @@ STAGE_IO: dict[str, dict[str, Any]] = {
     "representations": {"in": [CHUNKS],        "out": "Representation"},
     "retriever": {"in": ["Query", "Corpus"],   "out": SCORED},
     "refine":    {"in": [SCORED],              "out": SCORED},
-    "generator": {"in": [SCORED],              "out": "Answer"},
+    # The generator answers the Query from the retrieved context — it needs
+    # both (generate(query, context) -> Answer). The Query is supplied at
+    # runtime, like the retriever's.
+    "generator": {"in": ["Query", SCORED],     "out": "Answer"},
     # Infrastructure: no data inputs; each is a dependency wired into a node
     # (Store -> ChunkIndex, BlobStore -> parser).
     "vector_store": {"in": [],                 "out": "Store"},

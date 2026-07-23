@@ -677,6 +677,25 @@ button.primary:hover {
   margin-top: 4px;
 }
 
+/* Representation pick-list (hybrid): the corpus's wired spaces as checkboxes. */
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.checklist .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.checklist .check input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--accent);
+}
+
 .doc {
   white-space: pre-wrap;
   color: var(--text-dim);

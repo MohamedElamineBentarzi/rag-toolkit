@@ -65,7 +65,12 @@ export function endpointEdges(nodes: BlockNode[], mIndex: ManifestIndex): BlockE
   const retriever = find("retriever");
   if (retriever) link("ep-query", "Query", retriever.id);
   const generator = find("generator");
-  if (generator) link(generator.id, "Answer", "ep-answer");
+  if (generator) {
+    // The generator answers the Query from the retrieved context — it needs
+    // both, so the Query endpoint feeds it too (not only the retriever).
+    link("ep-query", "Query", generator.id);
+    link(generator.id, "Answer", "ep-answer");
+  }
   return edges;
 }
 

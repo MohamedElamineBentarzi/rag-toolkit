@@ -765,6 +765,7 @@
     {
       "chain": false,
       "in": [
+        "Query",
         "ScoredChunk[]"
       ],
       "kind": "generator",
