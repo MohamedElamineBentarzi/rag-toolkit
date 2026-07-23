@@ -31,7 +31,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
-from typing import BinaryIO, Iterable, Literal, Optional, Union
+from typing import BinaryIO, Iterable, Optional, Union
 
 __all__ = [
     "SourceFormat",
@@ -358,13 +358,19 @@ VectorValue = Union[list[float], SparseVector]
 class VectorSpec:
     """The declared schema of one named vector space inside a `VectorStore`.
 
-    A store is a *named, typed* multi-vector index: each `ChunkIndex`
-    representation ("dense", "splade", …) maps to one spec. `dimensions` and
+    A store is a *named, typed* multi-vector index: each vector-backed
+    `Representation` ("dense", "splade", …) declares one spec. `dimensions` and
     `distance` describe dense spaces only; sparse spaces ignore them.
+
+    `kind` is an **open string**, not a closed literal (DR-0004 D5): a new
+    representation plugin may define its own storage kind. Opening it does NOT
+    oblige a store to accept every kind — each backend validates the kinds it
+    physically supports at `ensure_schema` and raises on the rest (loud beats
+    lossy). `"dense"` and `"sparse"` are what the built-in stores support.
     """
 
     name: str
-    kind: Literal["dense", "sparse"]
+    kind: str
     dimensions: Optional[int] = None      # dense only
     distance: str = "cosine"              # dense only
 

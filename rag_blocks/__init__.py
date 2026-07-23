@@ -53,7 +53,17 @@ from .embedding import (
     SentenceTransformerEmbedder,
     SparseEncoder,
 )
-from .indexing import ChunkIndex, ChunkSink, DocumentCatalog, DocumentRef
+from .indexing import (
+    ChunkIndex,
+    ChunkSink,
+    Corpus,
+    DenseRepresentation,
+    DocumentCatalog,
+    DocumentRef,
+    LexicalRepresentation,
+    Representation,
+    SparseRepresentation,
+)
 from .enrichment import (
     ContextualEnricher,
     Enricher,
@@ -168,6 +178,11 @@ __all__ = [
     "SparseVector",
     "VectorSpec",
     "VectorValue",
+    "Corpus",
+    "Representation",
+    "DenseRepresentation",
+    "SparseRepresentation",
+    "LexicalRepresentation",
     "ChunkIndex",
     "ChunkSink",
     "DocumentCatalog",
