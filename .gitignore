@@ -32,7 +32,10 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
+# Anchored to the repo root: this is setuptools' top-level MANIFEST artifact.
+# Unanchored "MANIFEST" also matches studio/app/src/manifest/ on case-insensitive
+# filesystems (Windows core.ignorecase), silently dropping tracked source.
+/MANIFEST
 
 # Unit test / coverage reports
 htmlcov/
