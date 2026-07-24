@@ -9,9 +9,11 @@ bookkeeping and provenance.
 from .base import Chunker
 from .fixed import FixedChunker
 from .markdown import MarkdownChunker
+from .markdown_fixed import MarkdownFixedChunker
 
 __all__ = [
     "Chunker",
     "FixedChunker",
     "MarkdownChunker",
+    "MarkdownFixedChunker",
 ]

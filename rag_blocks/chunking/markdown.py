@@ -25,7 +25,7 @@ from ..core.contracts import Document
 from ..core.registry import registry
 from .base import Chunker
 
-__all__ = ["MarkdownChunker"]
+__all__ = ["MarkdownChunker", "iter_heading_sections"]
 
 #: An ATX heading: 1–6 '#', then whitespace, then the title. Up to three
 #: leading spaces are allowed by CommonMark; `# no-space` is NOT a heading.
@@ -36,26 +36,32 @@ def _is_heading(line: str) -> bool:
     return _HEADING.match(line) is not None
 
 
+def iter_heading_sections(text: str) -> Iterator[tuple[int, int]]:
+    """Yield `(start, end)` spans between ATX heading boundaries, in reading
+    order. The preamble before the first heading is its own span; a heading at
+    offset 0 starts no empty span; no headings ⇒ one span over the whole text.
+    The sectioning primitive shared by the markdown and markdown-fixed chunkers."""
+    n = len(text)
+    if n == 0:
+        return
+    # Collect cut points: the document start, plus every heading's offset.
+    cut_points = [0]
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        if offset != 0 and _is_heading(line):
+            cut_points.append(offset)
+        offset += len(line)
+    cut_points.append(n)
+
+    for start, end in zip(cut_points, cut_points[1:]):
+        if end > start:  # consecutive headings can coincide; skip empties
+            yield start, end
+
+
 @registry.register
 class MarkdownChunker(Chunker):
     name = "markdown-aware"
     version = "0.1.0"
 
     def iter_spans(self, document: Document) -> Iterator[tuple[int, int]]:
-        text = document.markdown
-        n = len(text)
-        if n == 0:
-            return
-
-        # Collect cut points: the document start, plus every heading's offset.
-        cut_points = [0]
-        offset = 0
-        for line in text.splitlines(keepends=True):
-            if offset != 0 and _is_heading(line):
-                cut_points.append(offset)
-            offset += len(line)
-        cut_points.append(n)
-
-        for start, end in zip(cut_points, cut_points[1:]):
-            if end > start:  # consecutive headings can coincide; skip empties
-                yield start, end
+        yield from iter_heading_sections(document.markdown)

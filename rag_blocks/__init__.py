@@ -113,7 +113,7 @@ from .ingestion import (
     PlainTextParser,
     detect_format,
 )
-from .chunking import Chunker, FixedChunker, MarkdownChunker
+from .chunking import Chunker, FixedChunker, MarkdownChunker, MarkdownFixedChunker
 from .refinement import (
     CrossEncoderReranker,
     KeywordRefiner,
@@ -169,6 +169,7 @@ __all__ = [
     "Chunker",
     "FixedChunker",
     "MarkdownChunker",
+    "MarkdownFixedChunker",
     "Embedder",
     "SparseEncoder",
     "CachingEmbedder",

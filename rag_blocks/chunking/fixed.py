@@ -23,7 +23,7 @@ from typing import Iterator
 
 from ..core.contracts import Document
 from ..core.registry import registry
-from .base import Chunker
+from .base import Chunker, soft_window_end
 
 __all__ = ["FixedChunker"]
 
@@ -43,7 +43,7 @@ class FixedChunker(Chunker):
         n = len(text)
         start = 0
         while start < n:
-            end = self._cut_end(text, start, n)
+            end = soft_window_end(text, start, self.config.chunk_chars, n)
             yield start, end
             if end >= n:
                 break
@@ -51,19 +51,3 @@ class FixedChunker(Chunker):
             # progress even under a pathological overlap >= window size.
             next_start = end - self.config.overlap_chars
             start = next_start if next_start > start else end
-
-    def _cut_end(self, text: str, start: int, n: int) -> int:
-        """Where to end the window that begins at `start` (mirror of
-        PlainTextParser._cut_point, adapted to absolute offsets)."""
-        hard_end = start + self.config.chunk_chars
-        if hard_end >= n:
-            return n
-        # Only accept a soft cut in the back half of the window.
-        floor = start + self.config.chunk_chars // 2
-        para = text.rfind("\n\n", floor, hard_end)
-        if para != -1:
-            return para + 2
-        line = text.rfind("\n", floor, hard_end)
-        if line != -1:
-            return line + 1
-        return hard_end
