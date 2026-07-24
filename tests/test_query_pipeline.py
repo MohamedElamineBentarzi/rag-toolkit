@@ -1,7 +1,8 @@
 """QueryPipeline: Query -> retrieve -> refine chain -> truncate to k."""
 from rag_blocks.core.contracts import Chunk, Query
 from rag_blocks.embedding.hashing import HashingEmbedder
-from rag_blocks.indexing.chunk_index import ChunkIndex
+from rag_blocks.indexing.corpus import Corpus
+from rag_blocks.indexing.representation import DenseRepresentation
 from rag_blocks.pipeline import QueryPipeline, TraceEvent
 from rag_blocks.refinement.base import Refiner
 from rag_blocks.retrieval.index_retriever import IndexRetriever
@@ -15,13 +16,14 @@ _TEXTS = [
 
 
 def index_retriever():
-    index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder(dimensions=512))
-    index.add([
+    corpus = Corpus(MemoryVectorStore(),
+                    [DenseRepresentation(HashingEmbedder(dimensions=512))])
+    corpus.add([
         Chunk(id=f"d:{i}", doc_id="d", text=t, index=i,
               char_start=i, char_end=i + 1, page_start=1, page_end=1)
         for i, t in enumerate(_TEXTS)
     ])
-    return IndexRetriever(index)
+    return IndexRetriever(corpus)
 
 
 def test_query_returns_ranked_results():

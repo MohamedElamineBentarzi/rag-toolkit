@@ -317,7 +317,7 @@ def assert_lexical_index_contract(index: LexicalIndex) -> None:
 
 
 def assert_index_contract(index) -> None:
-    """Every ChunkIndex must behave like this, over whatever representations it
+    """Every Corpus must behave like this, over whatever representations it
     declares. Hermetic on memory store + HashingEmbedder + Bm25Index."""
     reps = index.representations()
     assert reps, "a ChunkIndex must declare at least one representation"

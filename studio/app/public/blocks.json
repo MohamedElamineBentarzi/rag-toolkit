@@ -136,6 +136,28 @@
       "version": "0.1.0"
     },
     {
+      "doc": "Turns a Document into a stream of retrieval Chunks.",
+      "exportable": true,
+      "kind": "chunker",
+      "name": "markdown-fixed",
+      "params": [
+        {
+          "default": 1600,
+          "name": "max_chars",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": 200,
+          "name": "overlap_chars",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
       "doc": "Strategy interface: augment a document's chunk stream with context.",
       "exportable": true,
       "kind": "enrich",
@@ -180,54 +202,18 @@
       "version": "0.1.0"
     },
     {
-      "doc": "Strategy interface: text \u2192 dense vector.",
+      "doc": "A dense-embedding space: an `Embedder` mounted as one searchable space.",
+      "encoder": {
+        "kind": "embedder",
+        "param": "embedder"
+      },
       "exportable": true,
-      "kind": "embedder",
-      "name": "hashing",
+      "kind": "representations",
+      "name": "dense",
       "params": [
-        {
-          "default": 256,
-          "name": "dimensions",
-          "required": false,
-          "type": "int"
-        }
-      ],
-      "takes_index": false,
-      "version": "0.1.0"
-    },
-    {
-      "doc": "Strategy interface: text \u2192 dense vector.",
-      "exportable": true,
-      "kind": "embedder",
-      "name": "sentence-transformers",
-      "params": [
-        {
-          "default": "BAAI/bge-m3",
-          "name": "model",
-          "required": false,
-          "type": "str"
-        },
-        {
-          "default": "",
-          "name": "query_instruction",
-          "required": false,
-          "type": "str"
-        },
-        {
-          "default": true,
-          "name": "normalize",
-          "required": false,
-          "type": "bool"
-        },
-        {
-          "default": 32,
-          "name": "batch_size",
-          "required": false,
-          "type": "int"
-        },
         {
           "default": null,
-          "name": "device",
+          "name": "space",
           "required": false,
           "type": "str"
         }
@@ -236,32 +222,44 @@
       "version": "0.1.0"
     },
     {
-      "doc": "Strategy interface: a term-based search index.",
+      "doc": "Classic corpus-relative BM25: a self-managed `LexicalIndex`, mounted as a\nspace the Corpus searches without ever touching the vector store.",
+      "encoder": {
+        "kind": "lexical_index",
+        "param": "index"
+      },
       "exportable": true,
-      "kind": "lexical",
-      "name": "bm25",
+      "kind": "representations",
+      "name": "lexical",
       "params": [
         {
-          "default": 1.5,
-          "name": "k1",
-          "required": false,
-          "type": "float"
-        },
-        {
-          "default": 0.75,
-          "name": "b",
-          "required": false,
-          "type": "float"
-        },
-        {
-          "default": "default",
-          "name": "namespace",
+          "default": null,
+          "name": "space",
           "required": false,
           "type": "str"
         }
       ],
       "takes_index": false,
-      "version": "0.2.0"
+      "version": "0.1.0"
+    },
+    {
+      "doc": "A static-sparse (SPLADE-style) space: a `SparseEncoder` mounted as one\nsearchable space.",
+      "encoder": {
+        "kind": "sparse_encoder",
+        "param": "encoder"
+      },
+      "exportable": true,
+      "kind": "representations",
+      "name": "sparse",
+      "params": [
+        {
+          "default": null,
+          "name": "space",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
     },
     {
       "composite": "retrievers",
@@ -640,6 +638,97 @@
       ],
       "takes_index": false,
       "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: text \u2192 dense vector.",
+      "exportable": true,
+      "kind": "embedder",
+      "name": "hashing",
+      "nested": true,
+      "params": [
+        {
+          "default": 256,
+          "name": "dimensions",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: text \u2192 dense vector.",
+      "exportable": true,
+      "kind": "embedder",
+      "name": "sentence-transformers",
+      "nested": true,
+      "params": [
+        {
+          "default": "BAAI/bge-m3",
+          "name": "model",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": "",
+          "name": "query_instruction",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": true,
+          "name": "normalize",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": 32,
+          "name": "batch_size",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "device",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "Strategy interface: a term-based search index.",
+      "exportable": true,
+      "kind": "lexical_index",
+      "name": "bm25",
+      "nested": true,
+      "params": [
+        {
+          "default": 1.5,
+          "name": "k1",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "default": 0.75,
+          "name": "b",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "default": "default",
+          "name": "namespace",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "store_slot": {
+        "kind": "blob_store",
+        "param": "store"
+      },
+      "takes_index": false,
+      "version": "0.2.0"
     }
   ],
   "stages": [
@@ -672,37 +761,19 @@
       "single": false
     },
     {
-      "chain": false,
+      "chain": true,
       "in": [
         "Chunk[]"
       ],
-      "kind": "embedder",
+      "kind": "representations",
       "out": "Representation",
-      "single": true
-    },
-    {
-      "chain": false,
-      "in": [
-        "Chunk[]"
-      ],
-      "kind": "sparse",
-      "out": "Representation",
-      "single": true
-    },
-    {
-      "chain": false,
-      "in": [
-        "Chunk[]"
-      ],
-      "kind": "lexical",
-      "out": "Representation",
-      "single": true
+      "single": false
     },
     {
       "chain": false,
       "in": [
         "Query",
-        "Index"
+        "Corpus"
       ],
       "kind": "retriever",
       "out": "ScoredChunk[]",
@@ -720,6 +791,7 @@
     {
       "chain": false,
       "in": [
+        "Query",
         "ScoredChunk[]"
       ],
       "kind": "generator",
@@ -730,7 +802,7 @@
       "chain": false,
       "in": [],
       "kind": "vector_store",
-      "out": "Store",
+      "out": "VectorStore",
       "single": true
     },
     {
@@ -743,10 +815,13 @@
     {
       "in": [
         "Representation",
-        "Store"
+        "VectorStore"
       ],
-      "kind": "index",
-      "out": "Index",
+      "kind": "corpus",
+      "many_in": [
+        "Representation"
+      ],
+      "out": "Corpus",
       "synthetic": true
     }
   ],
@@ -760,11 +835,11 @@
     "Chunk[]": {
       "color": "#43b581"
     },
+    "Corpus": {
+      "color": "#e0a458"
+    },
     "Document": {
       "color": "#4f9dde"
-    },
-    "Index": {
-      "color": "#e0a458"
     },
     "Query": {
       "color": "#5ec8c8"
@@ -778,7 +853,7 @@
     "Source": {
       "color": "#8b8b9e"
     },
-    "Store": {
+    "VectorStore": {
       "color": "#8f7dff"
     }
   }

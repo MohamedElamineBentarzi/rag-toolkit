@@ -7,7 +7,7 @@ the same document — into one expanded passage.
 
 Two pieces of the architecture pay off here at once (G6):
 - **D3 `fetch`.** Neighbors are pulled by point retrieval without a query
-  vector: `index.fetch({"doc_id": d, "index": [i-1, i, i+1]})` — membership
+  vector: `corpus.fetch({"doc_id": d, "index": [i-1, i, i+1]})` — membership
   filter, no re-embedding.
 - **The provenance chain.** Because every chunk carries `char_start/char_end`,
   the merge is *overlap-safe*: neighbors are stitched by character coordinates,
@@ -28,7 +28,7 @@ from typing import Any, Optional
 from ..core.contracts import Chunk, Query, ScoredChunk
 from ..core.errors import ConfigError
 from ..core.registry import registry
-from ..indexing.chunk_index import ChunkIndex
+from ..indexing.corpus import Corpus
 from .base import Refiner
 
 __all__ = ["NeighborExpander"]
@@ -44,16 +44,16 @@ class NeighborExpander(Refiner):
         window: int = 1     # neighbors on each side (index ± window)
 
     def __init__(
-        self, index: ChunkIndex | None = None, config: Any = None,
+        self, corpus: Corpus | None = None, config: Any = None,
         **overrides: Any,
     ) -> None:
         super().__init__(config, **overrides)
-        if index is None:
+        if corpus is None:
             raise ConfigError(
-                "NeighborExpander must be built with index= (the ChunkIndex "
+                "NeighborExpander must be built with corpus= (the Corpus "
                 "whose neighbors it expands)"
             )
-        self.index = index
+        self.corpus = corpus
 
     def refine(
         self, query: Query, candidates: list[ScoredChunk], k: int
@@ -89,7 +89,7 @@ class NeighborExpander(Refiner):
             # Headroom: a synthetic chunk matching this membership filter would
             # consume a limit slot and silently displace a real neighbor
             # (order-dependent context loss). Over-fetch, then drop synthetics.
-            fetched = self.index.fetch(
+            fetched = self.corpus.fetch(
                 {"doc_id": anchor.doc_id, "index": missing},
                 limit=len(missing) * 2,
             )

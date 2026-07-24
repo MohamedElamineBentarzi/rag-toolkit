@@ -47,6 +47,8 @@ body,
 body {
   color: var(--text);
   font: 13px/1.5 var(--font-sans);
+  /* Full-screen tool: the page itself never scrolls. */
+  overflow: hidden;
   /* Layered radial glows in the type-colors, low opacity, over the base —
      the ambient identity of the console without any imagery. */
   background:
@@ -71,6 +73,9 @@ body {
   position: relative;
   flex: 1;
   min-height: 0;
+  /* Clip the drawers as they slide off either edge — otherwise the closed
+     right drawer sits off-screen and gives the page a horizontal scrollbar. */
+  overflow: hidden;
 }
 .drawer {
   position: absolute;
@@ -432,9 +437,19 @@ button.primary:hover {
 }
 .react-flow__edge-path {
   stroke-width: 2;
+  transition: stroke-width 0.12s, filter 0.12s;
 }
 .react-flow__edge.animated .react-flow__edge-path {
   stroke-dasharray: 6;
+}
+/* Click a connection to delete it — signal that with a pointer cursor and a
+   bright, thicker line with a soft "cut" red glow on hover. */
+.react-flow__edge {
+  cursor: pointer;
+}
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 5px var(--bad)) brightness(1.2);
 }
 .react-flow__connectionline .react-flow__connection-path {
   stroke: var(--accent);
@@ -442,26 +457,43 @@ button.primary:hover {
 }
 
 /* ---- typed port handles ---- */
+/* Bigger targets that are easy to grab: a 15px dot with a hairline ring, plus a
+   generous invisible hit area (the ::after) so you don't have to aim precisely —
+   paired with a wide `connectionRadius` on the canvas so a drag snaps to the
+   nearest port. */
 .react-flow__handle {
-  width: 12px;
-  height: 12px;
+  width: 15px;
+  height: 15px;
   border: 2px solid var(--bg-0);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 1px 4px rgba(0, 0, 0, 0.5);
   transition: box-shadow 0.15s, transform 0.15s, opacity 0.15s;
 }
+/* Enlarge the clickable/grab region well beyond the visible dot. */
+.react-flow__handle::after {
+  content: "";
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+}
 .react-flow__handle:hover {
-  transform: scale(1.25);
+  transform: scale(1.3);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22), 0 1px 5px rgba(0, 0, 0, 0.5);
+}
+.react-flow__handle.connectingto,
+.react-flow__handle.connectionindicator:hover {
+  transform: scale(1.3);
 }
 .react-flow__handle.compatible {
-  box-shadow: 0 0 0 4px rgba(74, 217, 145, 0.35);
+  box-shadow: 0 0 0 4px rgba(74, 217, 145, 0.4);
   animation: pulse 1.4s ease-in-out infinite;
 }
 .react-flow__handle.incompatible {
-  opacity: 0.2;
+  opacity: 0.18;
   filter: grayscale(0.7);
 }
 @keyframes pulse {
   50% {
-    box-shadow: 0 0 0 7px rgba(74, 217, 145, 0.12);
+    box-shadow: 0 0 0 8px rgba(74, 217, 145, 0.14);
   }
 }
 
@@ -520,6 +552,63 @@ button.primary:hover {
 .blocknode.synthetic .name {
   font-style: italic;
   color: var(--text-dim);
+}
+
+/* ---- corpus node: one labelled index output per representation ---- */
+.blocknode.corpus {
+  border-style: dashed;
+  min-width: 190px;
+}
+.blocknode.corpus .name {
+  font-style: italic;
+  color: var(--text-dim);
+}
+.corpus-indexes {
+  border-top: 1px solid var(--glass-border);
+  padding: 6px 0 8px;
+}
+.corpus-empty {
+  padding: 6px 16px 2px;
+  font: 500 11px var(--font-mono);
+  color: var(--text-faint);
+  text-align: right;
+}
+/* Frames the index ports as what they are: the corpus's representations. */
+.corpus-cap {
+  padding: 2px 16px 4px;
+  font: 600 8.5px/1 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-faint);
+}
+/* A row = one index; its output handle sits on the card's right edge, aligned to
+   the row. The row is the handle's positioned ancestor. */
+.corpus-index {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 18px 6px 16px;
+  transition: background 0.12s;
+}
+.corpus-index:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.corpus-index .ci-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px currentColor;
+}
+.corpus-index .ci-name {
+  font: 600 12px var(--font-mono);
+  color: var(--text);
+  letter-spacing: 0.2px;
+}
+/* Override the base absolute-centering so the handle tracks its row. */
+.blocknode.corpus .corpus-index .react-flow__handle {
+  right: -7px;
 }
 
 /* Endpoint terminals (Source / Query / Answer): a pill, not a card, so they
@@ -675,6 +764,36 @@ button.primary:hover {
   font-size: 10.5px;
   color: var(--text-faint);
   margin-top: 4px;
+}
+
+/* Representations a base retriever reads — read-only; the wiring is the choice.
+   Shown as a plain list (the Corpus indexes wired into this retriever). */
+.wired-reps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wired-reps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 1px solid var(--glass-border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  font: 600 12px var(--font-mono);
+  color: var(--text);
+}
+.wired-reps .wr-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--stage, #e0a458);
+  box-shadow: 0 0 8px var(--stage, #e0a458);
 }
 
 .doc {

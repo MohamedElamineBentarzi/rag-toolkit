@@ -1,10 +1,10 @@
 """HybridRetriever: progressive-disclosure sugar over FusionRetriever.
 
-The common case of fusion: search several representations of *one* index and
-blend them. `HybridRetriever(index)` builds an `IndexRetriever` per
+The common case of fusion: search several representations of *one* corpus and
+blend them. `HybridRetriever(corpus)` builds an `IndexRetriever` per
 representation (all of them by default) and delegates to the same RRF fusion
 node — the common case reads like English; the power case (fusing across
-indexes or paradigms) is `FusionRetriever` directly (DR-0001 v2, D5/F2b).
+corpora or paradigms) is `FusionRetriever` directly (DR-0001 v2, D5/F2b).
 
 There is no `HybridDenseBm25Retriever` and never will be: hybridization is
 composition, not a class.
@@ -18,7 +18,7 @@ from typing import Any, Optional, Sequence
 from ..core.contracts import Query, ScoredChunk
 from ..core.errors import ConfigError
 from ..core.registry import registry
-from ..indexing.chunk_index import ChunkIndex
+from ..indexing.corpus import Corpus
 from .base import Retriever
 from .fusion_retriever import FusionRetriever
 from .index_retriever import IndexRetriever
@@ -39,26 +39,26 @@ class HybridRetriever(Retriever):
 
     def __init__(
         self,
-        index: ChunkIndex | None = None,
+        corpus: Corpus | None = None,
         representations: Optional[Sequence[str]] = None,
         config: Any = None,
         **overrides: Any,
     ) -> None:
         super().__init__(config, **overrides)
-        if index is None:
+        if corpus is None:
             raise ConfigError(
-                "HybridRetriever must be built with index= (a ChunkIndex), "
+                "HybridRetriever must be built with corpus= (a Corpus), "
                 "not by name alone"
             )
-        self.index = index
-        reps = list(representations) if representations else index.representations()
+        self.corpus = corpus
+        reps = list(representations) if representations else corpus.representations()
         if not reps:
-            raise ConfigError("HybridRetriever: the index declares no representations")
+            raise ConfigError("HybridRetriever: the corpus declares no representations")
         self.representations = reps
         # Sugar: one IndexRetriever per representation, fused by RRF. The fusion
         # node owns all the mechanics — this class only picks the sub-retrievers.
         self._fusion = FusionRetriever(
-            [IndexRetriever(index, rep) for rep in reps],
+            [IndexRetriever(corpus, rep) for rep in reps],
             rrf_k=self.config.rrf_k,
             fetch_k=self.config.fetch_k,
             weights=self.config.weights,
@@ -74,6 +74,6 @@ class HybridRetriever(Retriever):
 
     def describe(self) -> dict:
         info = super().describe()
-        info["index_fingerprint"] = self.index.fingerprint()
+        info["corpus_fingerprint"] = self.corpus.fingerprint()
         info["representations"] = self.representations
         return info

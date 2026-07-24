@@ -9,7 +9,12 @@ from rag_blocks.pipeline import RagPipeline
 from rag_blocks.storage.local import LocalBlobStore
 from rag_blocks.storage.memory_store import MemoryVectorStore
 
-DENSE = {"embedder": {"name": "hashing", "params": {"dimensions": 64}}}
+DENSE = {
+    "representations": [
+        {"name": "dense",
+         "params": {"embedder": {"name": "hashing", "params": {"dimensions": 64}}}}
+    ]
+}
 
 
 def test_builds_a_live_pipeline_from_a_spec():
@@ -37,11 +42,47 @@ def test_an_omitted_stage_keeps_the_pipelines_own_default():
     assert rag.generator.name == "extractive"  # RagPipeline's default
 
 
-def test_representations_become_the_index():
-    rag = PipelineBuilder().build(
-        {**DENSE, "lexical": {"name": "bm25", "params": {}}}
-    )
-    assert set(rag.chunk_index.representations()) == {"dense", "lexical"}
+def test_representations_become_the_corpus():
+    rag = PipelineBuilder().build({
+        "representations": [
+            {"name": "dense",
+             "params": {"embedder": {"name": "hashing", "params": {"dimensions": 64}}}},
+            {"name": "lexical", "params": {"index": {"name": "bm25"}}},
+        ]
+    })
+    assert set(rag.corpus.representations()) == {"dense", "lexical"}
+
+
+def test_a_self_managed_encoder_gets_its_own_nested_store(tmp_path):
+    # BM25 keeps its OWN isolated blob store (the deliberate asymmetry): the
+    # corpus owns the shared vector store, BM25 owns its persistence. The builder
+    # resolves the nested store sub-spec by type, to any depth (rep -> index ->
+    # store) — no param name hardcoded.
+    from rag_blocks.storage.base import BlobStore
+
+    rag = PipelineBuilder().build({
+        "representations": [
+            {"name": "lexical", "params": {"index": {"name": "bm25", "params": {
+                "store": {"name": "local", "params": {"root": str(tmp_path)}}}}}},
+        ]
+    })
+    rep = rag.corpus._by_space["lexical"]
+    index = rep.encoder                       # the BM25Index
+    assert isinstance(index._store, BlobStore)   # a live store, not a dict
+
+
+def test_a_new_representation_kind_needs_no_builder_change():
+    # The Open/Closed win: a representation is named in the list like any other
+    # registered component; its encoder nests as a sub-spec the builder resolves
+    # by type. No hardcoded embedder/sparse/lexical keys anywhere.
+    rag = PipelineBuilder().build({
+        "representations": [
+            {"name": "dense", "params": {
+                "space": "bge",
+                "embedder": {"name": "hashing", "params": {"dimensions": 128}}}},
+        ]
+    })
+    assert rag.corpus.representations() == ["bge"]
 
 
 def test_a_chain_stage_builds_in_order():
@@ -72,8 +113,8 @@ def test_each_build_gets_a_fresh_store():
     builder = PipelineBuilder()
     first = builder.build(DENSE)
     second = builder.build(DENSE)
-    assert first.chunk_index is not second.chunk_index
-    assert first.chunk_index._store is not second.chunk_index._store
+    assert first.corpus is not second.corpus
+    assert first.corpus._store is not second.corpus._store
 
 
 def test_the_store_factory_is_injectable():
@@ -117,11 +158,11 @@ def test_an_index_backed_retriever_gets_the_live_index():
         {**DENSE, "retriever": {"name": "index", "params": {"representation": "dense"}}}
     )
     assert rag.retriever.name == "index"
-    assert rag.retriever.index is rag.chunk_index  # the reason this class exists
+    assert rag.retriever.corpus is rag.corpus  # the reason this class exists
 
 
-def test_a_retriever_without_an_index_says_what_to_do():
-    with pytest.raises(ConfigError, match="needs an index"):
+def test_a_retriever_without_a_corpus_says_what_to_do():
+    with pytest.raises(ConfigError, match="needs a corpus"):
         PipelineBuilder().build({"retriever": {"name": "index"}})
 
 
@@ -133,7 +174,7 @@ def test_an_index_backed_refiner_also_gets_the_index():
         {**DENSE, "refine": [{"name": "neighbor-expander", "params": {"window": 2}}]}
     )
     expander = rag.query_pipeline.refine[0]
-    assert expander.index is rag.chunk_index
+    assert expander.corpus is rag.corpus
     assert expander.config.window == 2
 
 
@@ -144,8 +185,8 @@ def test_a_refiner_that_needs_no_index_is_built_plainly():
     assert rag.query_pipeline.refine[0].config.min_score == 0.2
 
 
-def test_an_index_backed_refiner_without_an_index_says_what_to_do():
-    with pytest.raises(ConfigError, match="needs an index"):
+def test_an_index_backed_refiner_without_a_corpus_says_what_to_do():
+    with pytest.raises(ConfigError, match="needs a corpus"):
         PipelineBuilder().build({"refine": [{"name": "neighbor-expander"}]})
 
 
@@ -168,7 +209,7 @@ def test_an_unknown_representation_fails_fast():
 
 def test_a_vector_store_from_the_spec_backs_the_index():
     rag = PipelineBuilder().build({**DENSE, "vector_store": {"name": "memory"}})
-    assert isinstance(rag.chunk_index._store, MemoryVectorStore)
+    assert isinstance(rag.corpus._store, MemoryVectorStore)
 
 
 def test_a_blob_store_from_the_spec_is_wired(tmp_path):
@@ -181,7 +222,7 @@ def test_a_blob_store_from_the_spec_is_wired(tmp_path):
 def test_omitting_infra_keeps_the_builders_own_defaults():
     # No store/blob_store in the spec -> the builder's store_factory + blob_store.
     rag = PipelineBuilder().build(DENSE)
-    assert isinstance(rag.chunk_index._store, MemoryVectorStore)
+    assert isinstance(rag.corpus._store, MemoryVectorStore)
     assert rag.indexing.blob_store is None
 
 
@@ -190,7 +231,10 @@ def test_omitting_infra_keeps_the_builders_own_defaults():
 
 def test_fusion_wraps_sub_retrievers_from_a_nested_spec():
     rag = PipelineBuilder().build({
-        "embedder": {"name": "hashing"}, "lexical": {"name": "bm25"},
+        "representations": [
+            {"name": "dense", "params": {"embedder": {"name": "hashing"}}},
+            {"name": "lexical", "params": {"index": {"name": "bm25"}}},
+        ],
         "retriever": {"name": "fusion", "retrievers": [
             {"name": "index", "params": {"representation": "dense"}},
             {"name": "index", "params": {"representation": "lexical"}},
@@ -203,7 +247,8 @@ def test_fusion_wraps_sub_retrievers_from_a_nested_spec():
 def test_hyde_wraps_an_inner_retriever_and_takes_the_generators_llm():
     # `complete` comes from the generator (§7.6 seam), not the spec.
     rag = PipelineBuilder().build({
-        "embedder": {"name": "hashing"}, "generator": {"name": "anthropic"},
+        "representations": [{"name": "dense", "params": {"embedder": {"name": "hashing"}}}],
+        "generator": {"name": "anthropic"},
         "retriever": {"name": "hyde",
                       "inner": {"name": "index", "params": {"representation": "dense"}}},
     })
@@ -214,7 +259,7 @@ def test_hyde_wraps_an_inner_retriever_and_takes_the_generators_llm():
 def test_a_query_shaping_retriever_without_an_llm_says_what_to_do():
     with pytest.raises(ConfigError, match="LLM"):
         PipelineBuilder().build({
-            "embedder": {"name": "hashing"},
+            "representations": [{"name": "dense", "params": {"embedder": {"name": "hashing"}}}],
             "retriever": {"name": "hyde",
                           "inner": {"name": "index", "params": {"representation": "dense"}}},
         })

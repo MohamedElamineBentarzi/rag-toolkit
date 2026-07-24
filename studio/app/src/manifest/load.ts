@@ -46,6 +46,13 @@ export class ManifestIndex {
     );
   }
 
+  /** The installed, buildable encoders of a registry kind (embedder /
+   *  sparse_encoder / lexical_index) — what a representation can actually wrap.
+   *  Empty ⇒ that family ships no implementation in this build yet. */
+  encoderChoices(kind: string): ComponentSpec[] {
+    return (this.componentsByKind.get(kind) ?? []).filter((c) => c.exportable);
+  }
+
   /** A component's params filled with their defaults. */
   defaultParams(kind: string, name: string): Record<string, unknown> {
     const out: Record<string, unknown> = {};

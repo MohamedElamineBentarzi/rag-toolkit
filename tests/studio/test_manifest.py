@@ -10,7 +10,7 @@ import pytest
 
 from rag_blocks.core.registry import registry
 from rag_blocks.evaluation.space import CHAIN_STAGES, SPEC_KINDS
-from rag_blocks.studio.manifest import build_manifest
+from rag_blocks.studio.manifest import ENCODER_KINDS, build_manifest
 
 
 @pytest.fixture(scope="module")
@@ -27,10 +27,15 @@ def test_top_level_shape(manifest):
 
 
 def test_every_registered_component_appears(manifest):
-    # The whole point: nothing registered is missing from the palette.
+    # The whole point: nothing registered is missing from the palette — the
+    # stage components plus the encoders that nest inside a representation.
     expected = {
         (stage, name)
         for stage, reg_kind in SPEC_KINDS.items()
+        for name in registry.available(reg_kind)
+    } | {
+        (reg_kind, name)
+        for reg_kind in ENCODER_KINDS
         for name in registry.available(reg_kind)
     }
     got = {(c["kind"], c["name"]) for c in manifest["components"]}
@@ -39,16 +44,44 @@ def test_every_registered_component_appears(manifest):
 
 def test_every_component_round_trips_to_a_real_class(manifest):
     # A manifest entry must name a component the registry can actually build.
+    # A stage's `kind` maps through SPEC_KINDS; an encoder's `kind` IS its
+    # registry kind directly.
     for c in manifest["components"]:
-        cls = registry.get(SPEC_KINDS[c["kind"]], c["name"])
+        reg_kind = SPEC_KINDS.get(c["kind"], c["kind"])
+        cls = registry.get(reg_kind, c["name"])
         assert cls.name == c["name"]
 
 
-def test_stages_are_in_pipeline_order_plus_the_synthetic_index(manifest):
+def test_stages_are_in_pipeline_order_plus_the_synthetic_corpus(manifest):
     kinds = [s["kind"] for s in manifest["stages"]]
-    assert kinds == list(SPEC_KINDS) + ["index"]
+    assert kinds == list(SPEC_KINDS) + ["corpus"]
     chain = {s["kind"] for s in manifest["stages"] if s.get("chain")}
     assert chain == set(CHAIN_STAGES)
+
+
+def test_representations_declare_their_nested_encoder_slot(manifest):
+    # A representation wraps an encoder that nests as a sub-spec; the inspector
+    # needs to know which param and which kind to offer.
+    dense = _by_name(manifest, "dense")
+    assert dense["kind"] == "representations"
+    assert dense["encoder"] == {"param": "embedder", "kind": "embedder"}
+    assert dense["exportable"] is True   # the nested encoder never blocks export
+    lexical = _by_name(manifest, "lexical")
+    assert lexical["encoder"] == {"param": "index", "kind": "lexical_index"}
+
+
+def test_encoders_are_nested_blocks_not_stages(manifest):
+    # hashing/bm25 appear so an inspector can offer them, flagged `nested`.
+    hashing = _by_name(manifest, "hashing")
+    assert hashing["kind"] == "embedder" and hashing["nested"] is True
+    assert _by_name(manifest, "bm25")["kind"] == "lexical_index"
+
+
+def test_the_corpus_node_has_a_many_representations_port(manifest):
+    corpus = next(s for s in manifest["stages"] if s["kind"] == "corpus")
+    assert corpus["out"] == "Corpus"
+    assert "Representation" in corpus["in"] and "VectorStore" in corpus["in"]
+    assert corpus["many_in"] == ["Representation"]
 
 
 def test_param_types_are_all_known_widgets(manifest):
@@ -103,7 +136,7 @@ def test_optional_storage_backend_does_not_block_export(manifest):
 
 
 def test_store_and_blob_store_are_blocks(manifest):
-    # The infrastructure the ChunkIndex/pipeline is built on, now spec-expressible.
+    # The infrastructure the Corpus/pipeline is built on, now spec-expressible.
     names = {(c["kind"], c["name"]) for c in manifest["components"]}
     assert ("vector_store", "qdrant") in names
     assert ("vector_store", "memory") in names
@@ -111,11 +144,11 @@ def test_store_and_blob_store_are_blocks(manifest):
     assert ("blob_store", "local") in names
 
 
-def test_index_gains_a_store_port_and_parser_a_blobstore_port(manifest):
+def test_corpus_gains_a_store_port_and_parser_a_blobstore_port(manifest):
     stage = {s["kind"]: s for s in manifest["stages"]}
-    assert "Store" in stage["index"]["in"]        # Store -> ChunkIndex
-    assert "BlobStore" in stage["parser"]["in"]   # BlobStore -> parser
-    assert stage["vector_store"]["out"] == "Store"
+    assert "VectorStore" in stage["corpus"]["in"]  # VectorStore -> Corpus
+    assert "BlobStore" in stage["parser"]["in"]    # BlobStore -> parser
+    assert stage["vector_store"]["out"] == "VectorStore"
     assert stage["blob_store"]["out"] == "BlobStore"
 
 

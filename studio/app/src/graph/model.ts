@@ -1,9 +1,11 @@
 import type { Node, Edge } from "@xyflow/react";
 
-// The data every canvas node carries. `kind` is the spec stage (or "index" for
-// the one synthetic ChunkIndex node); `name` is the component; `params` is the
+// The data every canvas node carries. `kind` is the spec stage (or "corpus" for
+// the one synthetic Corpus node); `name` is the component; `params` is the
 // live config the inspector edits and the exporter reads.
-// A nested sub-retriever inside a composite (fusion/hyde/multi-query).
+// A nested sub-component: a sub-retriever inside a composite, or a
+// representation's wrapped encoder — both are {name, params} configured in the
+// inspector rather than as separate graph nodes.
 export interface SubRetriever {
   name: string;
   params: Record<string, unknown>;
@@ -17,6 +19,9 @@ export interface BlockData {
   /** Composite retriever nesting (set when the block is a composite). */
   inner?: SubRetriever;
   retrievers?: SubRetriever[];
+  /** A representation's wrapped encoder (set when the block is a
+   *  representation): the embedder/encoder/index it mounts. */
+  encoder?: SubRetriever;
   [key: string]: unknown;
 }
 

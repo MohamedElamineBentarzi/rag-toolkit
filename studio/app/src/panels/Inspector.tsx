@@ -3,6 +3,7 @@ import { useStudio } from "../graph/store";
 import type { ManifestIndex } from "../manifest/load";
 import type { BlockNode, SubRetriever } from "../graph/model";
 import type { ComponentSpec, ParamSpec } from "../manifest/types";
+import { corpusArity, wiredSpaces } from "../graph/corpus";
 
 // The right drawer: configure the selected block, or read how it works. Both
 // tabs are generated from the manifest — the form fields from each param's type,
@@ -12,6 +13,7 @@ export function Inspector() {
   const [tab, setTab] = useState<"config" | "info">("config");
   const selectedId = useStudio((s) => s.selectedId);
   const node = useStudio((s) => s.nodes.find((n) => n.id === s.selectedId));
+  const edges = useStudio((s) => s.edges);
   const mIndex = useStudio((s) => s.mIndex);
   const updateParams = useStudio((s) => s.updateParams);
   const updateData = useStudio((s) => s.updateData);
@@ -34,12 +36,12 @@ export function Inspector() {
       </div>
     );
   }
-  if (node.data.kind === "index") {
+  if (node.data.kind === "corpus") {
     return (
       <div className="inspector">
         <div className="empty">
-          The <b>ChunkIndex</b> is wired from the representation blocks that feed it — it has
-          no params of its own.
+          The <b>Corpus</b> is wired from the representation blocks that feed it and the vector
+          store that backs it — it has no params of its own.
         </div>
       </div>
     );
@@ -47,6 +49,15 @@ export function Inspector() {
 
   const comp = mIndex.component(node.data.kind, node.data.name);
   if (!comp) return <div className="inspector" />;
+
+  // A retriever selects its representation(s) by wiring Corpus index ports, so
+  // `spaces` is what's actually wired in — the pool its sub-retrievers pick from,
+  // and the read-only list a base retriever shows instead of a param field.
+  const isRetriever = node.data.kind === "retriever";
+  const arity = isRetriever ? corpusArity(comp) : "pool";
+  const spaces = isRetriever ? wiredSpaces(node.id, edges) : [];
+  // A base retriever's representation param is wired, not typed — hide it.
+  const hide = isRetriever && arity !== "pool" ? ["representation", "representations"] : [];
 
   return (
     <div className="inspector">
@@ -71,13 +82,25 @@ export function Inspector() {
             key={selectedId ?? ""}
             comp={comp}
             params={node.data.params}
+            spaces={spaces}
+            hide={hide}
             onChange={(params) => updateParams(node.id, params)}
           />
+          {isRetriever && arity !== "pool" && <WiredReps arity={arity} spaces={spaces} />}
+          {comp.encoder && (
+            <EncoderEditor
+              comp={comp}
+              node={node}
+              mIndex={mIndex}
+              onPatch={(patch) => updateData(node.id, patch)}
+            />
+          )}
           {comp.composite && (
             <CompositeEditor
               comp={comp}
               node={node}
               mIndex={mIndex}
+              spaces={spaces}
               onPatch={(patch) => updateData(node.id, patch)}
             />
           )}
@@ -89,10 +112,39 @@ export function Inspector() {
   );
 }
 
-// A composite retriever's nested sub-retriever(s), configured here rather than
-// as separate graph nodes — so the canvas keeps its clean single-output
-// retriever ports (progressive disclosure; the nesting is the rare case).
-function CompositeEditor({
+// A base retriever's representations, read-only: they come from the Corpus index
+// ports wired into it, not a field here. Wire more indexes on the canvas to add
+// them (a single `index` retriever takes exactly one).
+function WiredReps({ arity, spaces }: { arity: "single" | "multi"; spaces: string[] }) {
+  return (
+    <div className="composite">
+      <div className="composite-head">Representations</div>
+      {spaces.length === 0 ? (
+        <div className="hint">
+          Wire a Corpus index into this retriever&rsquo;s <b>Corpus</b> port to choose{" "}
+          {arity === "single" ? "its representation" : "which representations to fuse"}.
+        </div>
+      ) : (
+        <ul className="wired-reps">
+          {spaces.map((s) => (
+            <li key={s}>
+              <span className="wr-dot" />
+              {s}
+            </li>
+          ))}
+        </ul>
+      )}
+      {arity === "multi" && (
+        <div className="hint">Wire more Corpus indexes to fuse them; all wired are used.</div>
+      )}
+    </div>
+  );
+}
+
+// A representation's wrapped encoder (the embedder/index it mounts), configured
+// here rather than as a separate graph node — the encoder has no meaning apart
+// from the representation that owns it, so it nests in the inspector (DR-0004 D7).
+function EncoderEditor({
   comp,
   node,
   mIndex,
@@ -101,6 +153,77 @@ function CompositeEditor({
   comp: ComponentSpec;
   node: BlockNode;
   mIndex: ManifestIndex;
+  onPatch: (patch: { encoder?: SubRetriever }) => void;
+}) {
+  const slot = comp.encoder!;
+  const options = mIndex.encoderChoices(slot.kind);
+  const value = node.data.encoder;
+  const encComp = value ? mIndex.component(slot.kind, value.name) : undefined;
+  if (options.length === 0) {
+    const family = slot.kind.replace(/_/g, " ");
+    return (
+      <div className="composite">
+        <div className="composite-head">{slot.kind}</div>
+        <div className="hint">
+          No {family} is installed in this build yet, so <b>{comp.name}</b> can&rsquo;t be built.
+          {slot.kind === "sparse_encoder" && (
+            <> Use <b>lexical</b> (bm25) for keyword retrieval in the meantime.</>
+          )}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="composite">
+      <div className="composite-head">{slot.kind}</div>
+      <div className="sub-retriever">
+        <div className="sub-head">
+          <select
+            value={value?.name ?? ""}
+            onChange={(e) =>
+              onPatch({ encoder: { name: e.target.value, params: mIndex.defaultParams(slot.kind, e.target.value) } })
+            }
+          >
+            {!value && <option value="">— pick a {slot.kind} —</option>}
+            {options.map((o) => (
+              <option key={o.name} value={o.name}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {value && encComp && encComp.params.length > 0 && (
+          <ConfigForm
+            comp={encComp}
+            params={value.params}
+            onChange={(params) => onPatch({ encoder: { name: value.name, params } })}
+          />
+        )}
+        {encComp?.store_slot && (
+          <div className="hint">
+            Keeps its own index. Wire a <b>BlobStore</b> into this block&rsquo;s BlobStore port
+            to persist it — otherwise it runs in-memory (rebuilt each run).
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// A composite retriever's nested sub-retriever(s), configured here rather than
+// as separate graph nodes — so the canvas keeps its clean single-output
+// retriever ports (progressive disclosure; the nesting is the rare case).
+function CompositeEditor({
+  comp,
+  node,
+  mIndex,
+  spaces,
+  onPatch,
+}: {
+  comp: ComponentSpec;
+  node: BlockNode;
+  mIndex: ManifestIndex;
+  spaces: string[];
   onPatch: (patch: { inner?: SubRetriever; retrievers?: SubRetriever[] }) => void;
 }) {
   const bases = mIndex.baseRetrievers();
@@ -120,6 +243,7 @@ function CompositeEditor({
           value={node.data.inner ?? defaultSub(mIndex)}
           bases={bases}
           mIndex={mIndex}
+          spaces={spaces}
           onChange={(sub) => onPatch({ inner: sub })}
         />
       )}
@@ -128,6 +252,7 @@ function CompositeEditor({
           value={node.data.retrievers ?? []}
           bases={bases}
           mIndex={mIndex}
+          spaces={spaces}
           onChange={(list) => onPatch({ retrievers: list })}
         />
       )}
@@ -139,11 +264,13 @@ function RetrieverList({
   value,
   bases,
   mIndex,
+  spaces,
   onChange,
 }: {
   value: SubRetriever[];
   bases: ComponentSpec[];
   mIndex: ManifestIndex;
+  spaces: string[];
   onChange: (list: SubRetriever[]) => void;
 }) {
   return (
@@ -154,6 +281,7 @@ function RetrieverList({
           value={sub}
           bases={bases}
           mIndex={mIndex}
+          spaces={spaces}
           onChange={(s) => onChange(value.map((v, j) => (j === i ? s : v)))}
           onRemove={() => onChange(value.filter((_, j) => j !== i))}
         />
@@ -173,12 +301,14 @@ function SubRetrieverEditor({
   value,
   bases,
   mIndex,
+  spaces,
   onChange,
   onRemove,
 }: {
   value: SubRetriever;
   bases: ComponentSpec[];
   mIndex: ManifestIndex;
+  spaces: string[];
   onChange: (sub: SubRetriever) => void;
   onRemove?: () => void;
 }) {
@@ -205,7 +335,7 @@ function SubRetrieverEditor({
         )}
       </div>
       {comp && comp.params.length > 0 && (
-        <ConfigForm comp={comp} params={value.params} onChange={(params) => onChange({ name: value.name, params })} />
+        <ConfigForm comp={comp} params={value.params} spaces={spaces} onChange={(params) => onChange({ name: value.name, params })} />
       )}
     </div>
   );
@@ -221,39 +351,51 @@ function defaultSub(mIndex: ManifestIndex): SubRetriever {
 function ConfigForm({
   comp,
   params,
+  spaces = [],
+  hide = [],
   onChange,
 }: {
   comp: ComponentSpec;
   params: Record<string, unknown>;
+  spaces?: string[];
+  hide?: string[];
   onChange: (p: Record<string, unknown>) => void;
 }) {
   if (!comp.params.length) {
     return <div className="empty">No parameters.</div>;
   }
+  const visible = comp.params.filter((p) => !hide.includes(p.name));
+  if (!visible.length) return null; // e.g. an `index` retriever, wired not typed
   const set = (name: string, value: unknown) => onChange({ ...params, [name]: value });
   return (
     <div>
-      {comp.params.map((p) => (
-        <Field key={p.name} p={p} value={params[p.name]} onChange={(v) => set(p.name, v)} />
+      {visible.map((p) => (
+        <Field key={p.name} p={p} value={params[p.name]} spaces={spaces} onChange={(v) => set(p.name, v)} />
       ))}
     </div>
   );
 }
 
-function Field({ p, value, onChange }: { p: ParamSpec; value: unknown; onChange: (v: unknown) => void }) {
+function Field({ p, value, spaces, onChange }: { p: ParamSpec; value: unknown; spaces: string[]; onChange: (v: unknown) => void }) {
   return (
     <div className="field">
       <label>
         {p.name}
         {p.required ? " *" : ""} {p.secret ? "🔒" : ""}
       </label>
-      <FieldInput p={p} value={value} onChange={onChange} />
+      <FieldInput p={p} value={value} spaces={spaces} onChange={onChange} />
       {p.secret && <div className="hint">Secret — set via environment; never saved to the spec.</div>}
     </div>
   );
 }
 
-function FieldInput({ p, value, onChange }: { p: ParamSpec; value: unknown; onChange: (v: unknown) => void }) {
+function FieldInput({ p, value, spaces, onChange }: { p: ParamSpec; value: unknown; spaces: string[]; onChange: (v: unknown) => void }) {
+  // A sub-retriever's representation selector, driven by the spaces wired into
+  // the composite's Corpus port — a pick-list, never a typed-in magic string.
+  // Falls through to the plain widgets when no index is wired yet.
+  if (spaces.length && p.name === "representation") {
+    return <RepresentationSelect spaces={spaces} value={value} onChange={onChange} />;
+  }
   switch (p.type) {
     case "bool":
       return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />;
@@ -296,6 +438,32 @@ function FieldInput({ p, value, onChange }: { p: ParamSpec; value: unknown; onCh
         />
       );
   }
+}
+
+// One representation, picked from the corpus's wired spaces.
+function RepresentationSelect({
+  spaces,
+  value,
+  onChange,
+}: {
+  spaces: string[];
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const current = typeof value === "string" ? value : "";
+  return (
+    <select value={current} onChange={(e) => onChange(e.target.value || null)}>
+      {!current && <option value="">— pick a representation —</option>}
+      {spaces.map((s) => (
+        <option key={s} value={s}>
+          {s}
+        </option>
+      ))}
+      {current && !spaces.includes(current) && (
+        <option value={current}>{current} (not connected)</option>
+      )}
+    </select>
+  );
 }
 
 // A JSON param (dict/list) edited as text; invalid JSON is flagged but not

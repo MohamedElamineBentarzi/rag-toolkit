@@ -42,8 +42,8 @@ from rag_blocks.storage.vector_store import VectorStore
 _STORAGE_BASES = (BlobStore, VectorStore)
 
 #: Constructor parameters that are wiring, not settable spec params: `self` and
-#: the two the builder supplies itself (`config`, the live `index`).
-_WIRING_PARAMS = frozenset({"self", "config", "index"})
+#: the two the builder supplies itself (`config`, the live `corpus`).
+_WIRING_PARAMS = frozenset({"self", "config", "corpus"})
 
 #: Composition the builder wires from *nested sub-specs* (`inner`, `retrievers`)
 #: or the generator's LLM seam (`complete`) — so these params don't block export
@@ -85,25 +85,30 @@ STAGE_IO: dict[str, dict[str, Any]] = {
     "parser":    {"in": ["Source", "BlobStore"], "out": "Document"},
     "chunker":   {"in": ["Document"],          "out": CHUNKS},
     "enrich":    {"in": [CHUNKS],              "out": CHUNKS},
-    "embedder":  {"in": [CHUNKS],              "out": "Representation"},
-    "sparse":    {"in": [CHUNKS],              "out": "Representation"},
-    "lexical":   {"in": [CHUNKS],              "out": "Representation"},
-    "retriever": {"in": ["Query", "Index"],    "out": SCORED},
+    "representations": {"in": [CHUNKS],        "out": "Representation"},
+    "retriever": {"in": ["Query", "Corpus"],   "out": SCORED},
     "refine":    {"in": [SCORED],              "out": SCORED},
-    "generator": {"in": [SCORED],              "out": "Answer"},
+    # The generator answers the Query from the retrieved context — it needs
+    # both (generate(query, context) -> Answer). The Query is supplied at
+    # runtime, like the retriever's.
+    "generator": {"in": ["Query", SCORED],     "out": "Answer"},
     # Infrastructure: no data inputs; each is a dependency wired into a node
-    # (Store -> ChunkIndex, BlobStore -> parser).
-    "vector_store": {"in": [],                 "out": "Store"},
+    # (VectorStore -> Corpus, BlobStore -> parser). The port type mirrors the
+    # class name (VectorStore / BlobStore) so a port reads as what it is.
+    "vector_store": {"in": [],                 "out": "VectorStore"},
     "blob_store":   {"in": [],                 "out": "BlobStore"},
 }
 
-# One synthetic node, not a registry stage: representation blocks
-# (embedder/sparse/lexical) fan into it, a vector Store backs it, and it feeds
-# retrievers — mirroring a live ChunkIndex being wired from those backends
-# (DR-0001 v2). It is why the spec keys embedder/sparse/lexical/store are
-# separate rather than one "index" entry.
-INDEX_NODE = {"kind": "index", "in": ["Representation", "Store"], "out": "Index",
-              "synthetic": True}
+# The Corpus node (DR-0004): draggable `representation` blocks fan into its
+# many-input `representations` port, a `VectorStore` backs it, and it feeds
+# retrievers — mirroring a live Corpus wired from those backends. It is a node,
+# not a registry stage, because a Corpus is composed from live backends, never
+# built by name alone. The `representations` input is the first `many` port; the
+# React canvas sprouts one *output* port per wired representation (labeled by its
+# space), so a retriever wires to the space(s) it queries — the subset is visible
+# as edges, not a hidden dropdown (DR-0004 D7).
+CORPUS_NODE = {"kind": "corpus", "in": ["Representation", "VectorStore"], "out": "Corpus",
+               "synthetic": True, "many_in": ["Representation"]}
 
 #: A color per contract type, so a port's type is legible at a glance and an
 #: edge inherits its source type's color. Tuned for the dark n8n-ish canvas.
@@ -112,13 +117,20 @@ TYPE_COLORS: dict[str, str] = {
     "Document":      "#4f9dde",
     CHUNKS:          "#43b581",
     "Representation": "#c586f0",
-    "Index":         "#e0a458",
-    "Store":         "#8f7dff",
+    "Corpus":        "#e0a458",
+    "VectorStore":   "#8f7dff",
     "BlobStore":     "#c08a52",
     "Query":         "#5ec8c8",
     SCORED:          "#e06c9f",
     "Answer":        "#d4d44a",
 }
+
+
+#: Encoder kinds a representation *wraps* (DR-0004). Not pipeline stages of their
+#: own — they appear inside a representation's inspector (a nested sub-spec), not
+#: as draggable palette blocks — but Studio still needs their param descriptors,
+#: so the manifest emits them too, flagged `nested`.
+ENCODER_KINDS = ("embedder", "sparse_encoder", "lexical_index")
 
 
 def build_manifest() -> dict:
@@ -128,6 +140,10 @@ def build_manifest() -> dict:
     for stage, reg_kind in SPEC_KINDS.items():
         for name in registry.available(reg_kind):
             components.append(_component(stage, name))
+    # Encoders: available for nesting inside a representation, not as stages.
+    for reg_kind in ENCODER_KINDS:
+        for name in registry.available(reg_kind):
+            components.append(_encoder_component(reg_kind, name))
     return {
         "types": {t: {"color": c} for t, c in TYPE_COLORS.items()},
         "stages": stages,
@@ -137,7 +153,7 @@ def build_manifest() -> dict:
 
 def _stages() -> list[dict]:
     """Every spec key in pipeline order (SPEC_KINDS order is load-bearing for
-    stages; infra follows), plus the synthetic Index node."""
+    stages; infra follows), plus the synthetic Corpus node."""
     out = []
     for stage in SPEC_KINDS:  # dict preserves order: stages, then infra
         io = STAGE_IO[stage]
@@ -148,7 +164,7 @@ def _stages() -> list[dict]:
             "chain": stage in CHAIN_STAGES,
             "single": stage not in CHAIN_STAGES,
         })
-    out.append(INDEX_NODE)
+    out.append(CORPUS_NODE)
     return out
 
 
@@ -156,22 +172,29 @@ def _component(stage: str, name: str) -> dict:
     cls = registry.get(SPEC_KINDS[stage], name)
     exportable, blocker = _exportability(cls)
     slot, needs_llm = _composite_shape(cls)
+    encoder = _encoder_slot(cls) if stage == "representations" else None
     entry: dict[str, Any] = {
         "kind": stage,
         "name": name,
         "version": getattr(cls, "version", "0.1.0"),
         "doc": inspect.getdoc(cls) or "",
         "takes_index": _takes_index(cls),
-        "exportable": exportable,
+        # A representation's encoder nests as a sub-spec (like a composite's
+        # `inner`), so its Component-typed param never blocks export.
+        "exportable": True if encoder is not None else exportable,
         "params": _params(cls),
     }
+    if encoder is not None:
+        # Which nested param holds the wrapped encoder, and its registry kind —
+        # so the inspector renders a sub-picker over that kind's blocks.
+        entry["encoder"] = encoder
     if slot is not None:
         # A composite retriever: its sub-retrievers nest under this key.
         entry["composite"] = slot
     if needs_llm:
         # Shapes the query with an LLM — wired from the pipeline's generator.
         entry["needs_llm"] = True
-    if not exportable:
+    if not exportable and encoder is None:
         # Surfaced as a tooltip so the palette can explain *why* a block is
         # greyed out (it needs another component / a callable a flat spec can't
         # carry — the FusionRetriever/HydeRetriever limitation from builder.py).
@@ -181,12 +204,75 @@ def _component(stage: str, name: str) -> dict:
     return entry
 
 
+def _encoder_component(reg_kind: str, name: str) -> dict:
+    """An encoder (embedder/sparse_encoder/lexical_index) as a `nested` block —
+    offered inside a representation's inspector, not as a top-level stage."""
+    cls = registry.get(reg_kind, name)
+    exportable, blocker = _exportability(cls)
+    entry: dict[str, Any] = {
+        "kind": reg_kind,
+        "name": name,
+        "version": getattr(cls, "version", "0.1.0"),
+        "doc": inspect.getdoc(cls) or "",
+        "nested": True,
+        "takes_index": False,
+        "exportable": exportable,
+        "params": _params(cls),
+    }
+    store = _store_slot(cls)
+    if store is not None:
+        # A self-managed encoder (BM25) keeps its OWN isolated blob store for its
+        # inverted-index side-write — the corpus owns the shared vector store,
+        # this owns its persistence. Studio wires a BlobStore block into the
+        # representation that mounts this encoder; the wire nests under this param.
+        entry["store_slot"] = store
+    if not exportable:
+        entry["not_exportable_reason"] = (
+            f"needs {blocker!r}, which a flat spec can't express"
+        )
+    return entry
+
+
+def _store_slot(cls: type) -> dict | None:
+    """A `{"param", "kind"}` for a `BlobStore`-typed constructor param, else None.
+    This is how a self-managed encoder (BM25's optional `store: BlobStore`)
+    declares that Studio can wire it its own persistence backend — found by type,
+    so any future self-managed index gets the same treatment for free."""
+    for pname, hint in _ctor_params(cls):
+        h = _unwrap_optional(hint)
+        if isinstance(h, type) and issubclass(h, BlobStore):
+            return {"param": pname, "kind": "blob_store"}
+    return None
+
+
+def _encoder_slot(cls: type) -> dict | None:
+    """A representation's wrapped-encoder param: `{"param", "kind"}` (e.g.
+    `{"param": "embedder", "kind": "embedder"}`). Found by type — the first
+    Component-typed constructor param — so a new representation with a new
+    encoder type is described with no change here."""
+    for pname, hint in _ctor_params(cls):
+        kind = _component_kind(hint)
+        if kind is not None:
+            return {"param": pname, "kind": kind}
+    return None
+
+
+def _component_kind(hint: Any) -> str | None:
+    """The registry kind of a Component-typed annotation (unwrapping Optional),
+    else None."""
+    hint = _unwrap_optional(hint)
+    if isinstance(hint, type) and issubclass(hint, Component):
+        return getattr(hint, "kind", None)
+    return None
+
+
 def _takes_index(cls: type) -> bool:
-    """Mirror of PipelineBuilder._takes_index: does the constructor accept a
-    live index? Asked of the signature, so it stays true for any future
-    index-backed component."""
+    """Mirror of PipelineBuilder._takes_corpus: does the constructor accept a
+    live corpus? Asked of the signature, so it stays true for any future
+    corpus-backed component. (The emitted field stays `takes_index` until the
+    Studio manifest rework — DR-0004 D7.)"""
     try:
-        return "index" in inspect.signature(cls).parameters
+        return "corpus" in inspect.signature(cls).parameters
     except (TypeError, ValueError):
         return False
 

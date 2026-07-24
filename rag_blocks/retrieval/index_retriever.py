@@ -1,18 +1,19 @@
-"""IndexRetriever: a read-only view over one representation of a ChunkIndex.
+"""IndexRetriever: a read-only view over one representation of a Corpus.
 
 The collapse point of the old retriever zoo (DR-0001 v2, D5): `DenseRetriever`
 and `Bm25Retriever` were two thin adapters doing the same thing over different
-backends. Because `ChunkIndex.search(representation, text, k)` is uniform — it
-owns query encoding for *every* representation — one retriever covers them all:
-dense, static-sparse, or lexical, selected by name.
+backends. Because `Corpus.search(representation, text, k)` is uniform — the
+corpus owns query encoding for *every* representation — one retriever covers them
+all: dense, static-sparse, or lexical, selected by name (DR-0004 D4: the
+retriever addresses a corpus by space name, never a bare representation).
 
 Read-only by design: the retriever never writes. *What representations exist* is
 decided once, expensively, at index time; *how to query them* is decided many
 times, cheaply, here. That split is what lets the tuner index once and enumerate
 retrieval strategies for free (the G10 acceptance test).
 
-Progressive disclosure: `representation` is optional when the index has exactly
-one — the common case reads `IndexRetriever(index)`. Ambiguity (several
+Progressive disclosure: `representation` is optional when the corpus has exactly
+one — the common case reads `IndexRetriever(corpus)`. Ambiguity (several
 representations, none named) fails fast, listing the options.
 """
 
@@ -24,7 +25,7 @@ from typing import Any, Optional
 from ..core.contracts import Query, ScoredChunk
 from ..core.errors import ConfigError
 from ..core.registry import registry
-from ..indexing.chunk_index import ChunkIndex
+from ..indexing.corpus import Corpus
 from .base import Retriever
 
 __all__ = ["IndexRetriever"]
@@ -37,23 +38,23 @@ class IndexRetriever(Retriever):
 
     def __init__(
         self,
-        index: ChunkIndex | None = None,
+        corpus: Corpus | None = None,
         representation: Optional[str] = None,
         config: Any = None,
         **overrides: Any,
     ) -> None:
         super().__init__(config, **overrides)
-        if index is None:
+        if corpus is None:
             raise ConfigError(
-                "IndexRetriever must be built with index= (a ChunkIndex), "
+                "IndexRetriever must be built with corpus= (a Corpus), "
                 "not by name alone"
             )
-        self.index = index
-        reps = index.representations()
+        self.corpus = corpus
+        reps = corpus.representations()
         if representation is None:
             if len(reps) != 1:
                 raise ConfigError(
-                    f"IndexRetriever: index has {len(reps)} representations "
+                    f"IndexRetriever: corpus has {len(reps)} representations "
                     f"{reps}; pass representation= to pick one"
                 )
             representation = reps[0]
@@ -65,7 +66,7 @@ class IndexRetriever(Retriever):
         self.representation = representation
 
     def retrieve(self, query: Query, k: int = 20) -> list[ScoredChunk]:
-        results = self.index.search(self.representation, query.text, k, query.filters)
+        results = self.corpus.search(self.representation, query.text, k, query.filters)
         return [replace(r, retriever_name=self.name) for r in results]
 
     @property
@@ -75,6 +76,6 @@ class IndexRetriever(Retriever):
 
     def describe(self) -> dict:
         info = super().describe()
-        info["index_fingerprint"] = self.index.fingerprint()
+        info["corpus_fingerprint"] = self.corpus.fingerprint()
         info["representation"] = self.representation
         return info

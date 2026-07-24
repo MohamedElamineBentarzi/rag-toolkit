@@ -50,7 +50,7 @@ def dataset():
 def space(n=2):
     return SearchSpace(
         chunker=[choice("fixed", chunk_chars=[200, 400][:n], overlap_chars=0)],
-        embedder=[choice("hashing", dimensions=64)],
+        representations=[[choice("dense", embedder=choice("hashing", dimensions=64))]],
     )
 
 
@@ -145,7 +145,7 @@ def test_the_empty_chain_is_recorded_so_it_can_be_compared_against():
     # marginal for `refine` silently compared the refiners against nothing.
     # The Null Object is a choice; it has to be visible as one.
     sp = SearchSpace(
-        embedder=[choice("hashing", dimensions=64)],
+        representations=[[choice("dense", embedder=choice("hashing", dimensions=64))]],
         refine=[[], [choice("score-threshold", min_score=0.0)]],
     )
     board = GridTuner().run(sp, dataset(), source(), evaluators=screeners())
@@ -155,14 +155,16 @@ def test_the_empty_chain_is_recorded_so_it_can_be_compared_against():
     assert options == {"none", "score-threshold(min_score=0.0)"}
 
 
-def test_the_index_representations_are_recorded_by_name_not_just_fingerprint():
-    # Regression: ChunkIndex.describe() reports representations as opaque
-    # fingerprints, so a trial could not say WHICH embedder ran — breaking
-    # both reproducibility and marginal(). It asks the index now.
+def test_the_representations_are_recorded_by_name_not_just_fingerprint():
+    # A trial must say WHICH representations ran and how each encoder was
+    # configured (opaque fingerprints break reproducibility and marginal()).
+    # The `representations` stage record is a list, each folding in its encoder.
     board = run(GridTuner())
     spec = board.top(1, by="ndcg@3")[0].pipeline_spec
-    assert spec["embedder"]["name"] == "hashing"
-    assert spec["embedder"]["config"]["dimensions"] == 64
+    reps = spec["representations"]
+    assert reps[0]["name"] == "dense"
+    assert reps[0]["encoder"]["name"] == "hashing"
+    assert reps[0]["encoder"]["config"]["dimensions"] == 64
 
 
 def test_trials_carry_retrieval_metrics_and_cost():
@@ -188,7 +190,7 @@ def test_phase_1_screens_everything_and_phase_2_judges_only_finalists():
     screener, judge = _CountingEvaluator(k_values=(1, 3)), _CountingJudge()
     sp = SearchSpace(
         chunker=[choice("fixed", chunk_chars=[100, 200, 300, 400], overlap_chars=0)],
-        embedder=[choice("hashing", dimensions=64)],
+        representations=[[choice("dense", embedder=choice("hashing", dimensions=64))]],
     )
     run(
         GridTuner(screen_by="ndcg@3", finalists=2),
@@ -253,7 +255,7 @@ def test_nothing_scored_on_screen_by_means_the_judge_never_runs():
 def test_random_respects_its_budget():
     sp = SearchSpace(
         chunker=[choice("fixed", chunk_chars=[100, 200, 300, 400], overlap_chars=0)],
-        embedder=[choice("hashing", dimensions=64)],
+        representations=[[choice("dense", embedder=choice("hashing", dimensions=64))]],
     )
     assert len(list(RandomTuner(n_trials=2).iter_candidates(sp))) == 2
 
@@ -317,7 +319,10 @@ def test_one_bad_combination_does_not_lose_the_others(monkeypatch):
         return original(self, texts)
 
     monkeypatch.setattr(HashingEmbedder, "embed_texts", sometimes_explode)
-    sp = SearchSpace(embedder=[choice("hashing", dimensions=[32, 64])])
+    sp = SearchSpace(representations=[
+        [choice("dense", embedder=choice("hashing", dimensions=32))],
+        [choice("dense", embedder=choice("hashing", dimensions=64))],
+    ])
     board = GridTuner().run(sp, dataset(), source(), evaluators=screeners())
 
     assert len(board) == 2

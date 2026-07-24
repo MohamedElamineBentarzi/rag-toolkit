@@ -4,26 +4,36 @@ import type { StageSpec } from "../manifest/types";
 // connection validator can compare types without any extra lookup:
 //   target (input)  ->  "in:Document"
 //   source (output) ->  "out:Chunk[]"
+// A handle may also carry a *space* after a "#", to distinguish otherwise
+// identical ports on one node — the Corpus emits one "out:Corpus#<space>" port
+// per representation it holds, so wiring a specific index to a retriever is
+// what selects that representation:
+//   source (index) ->  "out:Corpus#dense"
 export type PortDir = "in" | "out";
 
 export interface Port {
   dir: PortDir;
   type: string;
+  /** The representation space, for a Corpus index port. */
+  space?: string;
   id: string;
 }
 
-export function handleId(dir: PortDir, type: string): string {
-  return `${dir}:${type}`;
+export function handleId(dir: PortDir, type: string, space?: string): string {
+  return space ? `${dir}:${type}#${space}` : `${dir}:${type}`;
 }
 
 export function parseHandle(id: string | null | undefined): Port | null {
   if (!id) return null;
-  const i = id.indexOf(":");
+  const hash = id.indexOf("#");
+  const space = hash >= 0 ? id.slice(hash + 1) : undefined;
+  const core = hash >= 0 ? id.slice(0, hash) : id;
+  const i = core.indexOf(":");
   if (i < 0) return null;
-  const dir = id.slice(0, i) as PortDir;
-  const type = id.slice(i + 1);
+  const dir = core.slice(0, i) as PortDir;
+  const type = core.slice(i + 1);
   if (dir !== "in" && dir !== "out") return null;
-  return { dir, type, id };
+  return { dir, type, space, id };
 }
 
 /** Input ports of a node's stage (Query/Source endpoints included — they just
@@ -34,10 +44,4 @@ export function inputPorts(stage: StageSpec): Port[] {
 
 export function outputPort(stage: StageSpec): Port {
   return { dir: "out", type: stage.out, id: handleId("out", stage.out) };
-}
-
-/** The one target handle that legitimately accepts many edges: representations
- *  fan into the ChunkIndex. Everything else is one-in. */
-export function acceptsMany(kind: string, port: Port): boolean {
-  return kind === "index" && port.type === "Representation";
 }

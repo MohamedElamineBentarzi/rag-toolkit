@@ -38,7 +38,31 @@ from typing import Iterator
 from ..core.component import Component
 from ..core.contracts import Chunk, Document
 
-__all__ = ["Chunker"]
+__all__ = ["Chunker", "soft_window_end"]
+
+
+def soft_window_end(text: str, start: int, target: int, limit: int) -> int:
+    """Where to end a ~`target`-char window beginning at `start`, never past
+    `limit`.
+
+    The size-capping primitive shared by every fixed-window strategy (the fixed
+    chunker over a whole document, the markdown-fixed chunker within one
+    section): prefer a paragraph break (`\\n\\n`), else a line break (`\\n`), but
+    only in the *back half* of the window — a soft cut earlier than that would
+    let a document of short lines produce a swarm of tiny chunks. No boundary in
+    range ⇒ a hard cut at `start + target`. `limit` is the hard ceiling (the
+    document end, or the section end) so a window never crosses it."""
+    hard_end = start + target
+    if hard_end >= limit:
+        return limit
+    floor = start + target // 2  # only accept a soft cut in the back half
+    para = text.rfind("\n\n", floor, hard_end)
+    if para != -1:
+        return para + 2
+    line = text.rfind("\n", floor, hard_end)
+    if line != -1:
+        return line + 1
+    return hard_end
 
 
 class Chunker(Component):

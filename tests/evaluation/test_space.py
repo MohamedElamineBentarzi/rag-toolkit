@@ -85,9 +85,43 @@ def test_stages_multiply():
     space = SearchSpace(
         chunker=[choice("fixed"), choice("markdown-aware")],
         generator=[choice("extractive")],
-        embedder=[choice("hashing", dimensions=[64, 128])],
+        refine=[[], [choice("keyword")]],
     )
     assert len(space) == 2 * 1 * 2 == len(list(space.expand()))
+
+
+# -- nested choice: an encoder tuned inside a representation --------------
+
+
+def test_a_nested_choice_becomes_a_sub_spec():
+    # choice("dense", embedder=choice("hashing")) → the embedder param carries a
+    # full {name, params} sub-spec, exactly what the builder resolves.
+    configs = list(choice("dense", embedder=choice("hashing")).expand())
+    assert configs == [
+        {"name": "dense", "params": {"embedder": {"name": "hashing", "params": {}}}}
+    ]
+
+
+def test_a_nested_choice_grid_expands_the_outer_choice():
+    # Tuning the encoder inside the representation: two dims → two dense specs.
+    configs = list(
+        choice("dense", embedder=choice("hashing", dimensions=[32, 64])).expand()
+    )
+    assert [c["params"]["embedder"]["params"]["dimensions"] for c in configs] == [32, 64]
+    assert all(c["name"] == "dense" for c in configs)
+
+
+def test_representations_is_a_chain_stage_over_nested_choices():
+    space = SearchSpace(
+        representations=[
+            [choice("dense", embedder=choice("hashing", dimensions=[32, 64]))],
+            [choice("dense", embedder=choice("hashing")), choice("lexical")],
+        ],
+    )
+    # First option grids into 2 chains (32, 64); second is one chain → 3 total.
+    combos = list(space.expand())
+    assert len(combos) == 3
+    assert all("representations" in c for c in combos)
 
 
 def test_each_combination_names_every_stage():

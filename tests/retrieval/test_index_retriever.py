@@ -1,10 +1,14 @@
-"""IndexRetriever: a read-only view over one representation of a ChunkIndex."""
+"""IndexRetriever: a read-only view over one representation of a Corpus."""
 import pytest
 
 from rag_blocks.core.contracts import Chunk, Query
 from rag_blocks.core.errors import ConfigError
 from rag_blocks.embedding.hashing import HashingEmbedder
-from rag_blocks.indexing.chunk_index import ChunkIndex
+from rag_blocks.indexing.corpus import Corpus
+from rag_blocks.indexing.representation import (
+    DenseRepresentation,
+    LexicalRepresentation,
+)
 from rag_blocks.retrieval.index_retriever import IndexRetriever
 from rag_blocks.storage.bm25_index import BM25Index
 from rag_blocks.storage.memory_store import MemoryVectorStore
@@ -26,18 +30,19 @@ def _chunks():
 
 
 def dense_index():
-    index = ChunkIndex(MemoryVectorStore(), dense=HashingEmbedder(dimensions=512))
-    index.add(_chunks())
-    return index
+    corpus = Corpus(MemoryVectorStore(),
+                    [DenseRepresentation(HashingEmbedder(dimensions=512))])
+    corpus.add(_chunks())
+    return corpus
 
 
 def hybrid_index():
-    index = ChunkIndex(
-        MemoryVectorStore(), dense=HashingEmbedder(dimensions=512),
-        lexical=BM25Index(),
-    )
-    index.add(_chunks())
-    return index
+    corpus = Corpus(MemoryVectorStore(), [
+        DenseRepresentation(HashingEmbedder(dimensions=512)),
+        LexicalRepresentation(BM25Index()),
+    ])
+    corpus.add(_chunks())
+    return corpus
 
 
 def test_dense_view_satisfies_the_retriever_contract():

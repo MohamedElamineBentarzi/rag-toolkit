@@ -53,7 +53,16 @@ from .embedding import (
     SentenceTransformerEmbedder,
     SparseEncoder,
 )
-from .indexing import ChunkIndex, ChunkSink, DocumentCatalog, DocumentRef
+from .indexing import (
+    ChunkSink,
+    Corpus,
+    DenseRepresentation,
+    DocumentCatalog,
+    DocumentRef,
+    LexicalRepresentation,
+    Representation,
+    SparseRepresentation,
+)
 from .enrichment import (
     ContextualEnricher,
     Enricher,
@@ -104,7 +113,7 @@ from .ingestion import (
     PlainTextParser,
     detect_format,
 )
-from .chunking import Chunker, FixedChunker, MarkdownChunker
+from .chunking import Chunker, FixedChunker, MarkdownChunker, MarkdownFixedChunker
 from .refinement import (
     CrossEncoderReranker,
     KeywordRefiner,
@@ -160,6 +169,7 @@ __all__ = [
     "Chunker",
     "FixedChunker",
     "MarkdownChunker",
+    "MarkdownFixedChunker",
     "Embedder",
     "SparseEncoder",
     "CachingEmbedder",
@@ -168,7 +178,11 @@ __all__ = [
     "SparseVector",
     "VectorSpec",
     "VectorValue",
-    "ChunkIndex",
+    "Corpus",
+    "Representation",
+    "DenseRepresentation",
+    "SparseRepresentation",
+    "LexicalRepresentation",
     "ChunkSink",
     "DocumentCatalog",
     "DocumentRef",

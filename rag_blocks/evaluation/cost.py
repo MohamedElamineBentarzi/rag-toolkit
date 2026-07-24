@@ -5,7 +5,7 @@ evaluation suite later hangs cost attribution on"). The collector *is* a
 `TraceHook` — it is callable — so wiring it up is one keyword:
 
     collector = CostCollector()
-    rag = RagPipeline(chunk_index=index, trace=collector)
+    rag = RagPipeline(corpus=corpus, trace=collector)
 
 No pipeline change, no instrumentation, no global state: cost attribution
 falls out of a seam that already existed, which is the whole reason it was put
