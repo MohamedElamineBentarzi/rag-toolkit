@@ -93,7 +93,12 @@ from .evaluation import (
     save_spec,
     validate_spec,
 )
-from .generation import AnthropicGenerator, ExtractiveGenerator, Generator
+from .generation import (
+    AnthropicGenerator,
+    ExtractiveGenerator,
+    Generator,
+    OpenRouterGenerator,
+)
 from .retrieval import (
     FusionRetriever,
     HybridRetriever,
@@ -211,6 +216,7 @@ __all__ = [
     "Generator",
     "ExtractiveGenerator",
     "AnthropicGenerator",
+    "OpenRouterGenerator",
     "Evaluator",
     "EvalSample",
     "EvalOutcome",

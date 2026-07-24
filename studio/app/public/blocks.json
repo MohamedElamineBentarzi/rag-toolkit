@@ -508,6 +508,71 @@
       "version": "0.1.0"
     },
     {
+      "doc": "Strategy interface: (query, context) \u2192 Answer with citations.",
+      "exportable": true,
+      "kind": "generator",
+      "name": "openrouter",
+      "params": [
+        {
+          "default": "openai/gpt-4o-mini",
+          "name": "model",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": 1024,
+          "name": "max_tokens",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "api_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": 8000,
+          "name": "max_context_chars",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "system",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "temperature",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "default": null,
+          "name": "site_url",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "site_name",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": 60.0,
+          "name": "timeout",
+          "required": false,
+          "type": "float"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
       "doc": "Strategy interface: a named, typed, multi-vector upsert-and-search index.",
       "exportable": true,
       "kind": "vector_store",
