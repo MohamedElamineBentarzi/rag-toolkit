@@ -93,20 +93,21 @@ STAGE_IO: dict[str, dict[str, Any]] = {
     # runtime, like the retriever's.
     "generator": {"in": ["Query", SCORED],     "out": "Answer"},
     # Infrastructure: no data inputs; each is a dependency wired into a node
-    # (Store -> ChunkIndex, BlobStore -> parser).
-    "vector_store": {"in": [],                 "out": "Store"},
+    # (VectorStore -> Corpus, BlobStore -> parser). The port type mirrors the
+    # class name (VectorStore / BlobStore) so a port reads as what it is.
+    "vector_store": {"in": [],                 "out": "VectorStore"},
     "blob_store":   {"in": [],                 "out": "BlobStore"},
 }
 
 # The Corpus node (DR-0004): draggable `representation` blocks fan into its
-# many-input `representations` port, a vector `Store` backs it, and it feeds
+# many-input `representations` port, a `VectorStore` backs it, and it feeds
 # retrievers — mirroring a live Corpus wired from those backends. It is a node,
 # not a registry stage, because a Corpus is composed from live backends, never
 # built by name alone. The `representations` input is the first `many` port; the
 # React canvas sprouts one *output* port per wired representation (labeled by its
 # space), so a retriever wires to the space(s) it queries — the subset is visible
 # as edges, not a hidden dropdown (DR-0004 D7).
-CORPUS_NODE = {"kind": "corpus", "in": ["Representation", "Store"], "out": "Corpus",
+CORPUS_NODE = {"kind": "corpus", "in": ["Representation", "VectorStore"], "out": "Corpus",
                "synthetic": True, "many_in": ["Representation"]}
 
 #: A color per contract type, so a port's type is legible at a glance and an
@@ -117,7 +118,7 @@ TYPE_COLORS: dict[str, str] = {
     CHUNKS:          "#43b581",
     "Representation": "#c586f0",
     "Corpus":        "#e0a458",
-    "Store":         "#8f7dff",
+    "VectorStore":   "#8f7dff",
     "BlobStore":     "#c08a52",
     "Query":         "#5ec8c8",
     SCORED:          "#e06c9f",
@@ -218,11 +219,30 @@ def _encoder_component(reg_kind: str, name: str) -> dict:
         "exportable": exportable,
         "params": _params(cls),
     }
+    store = _store_slot(cls)
+    if store is not None:
+        # A self-managed encoder (BM25) keeps its OWN isolated blob store for its
+        # inverted-index side-write — the corpus owns the shared vector store,
+        # this owns its persistence. Studio wires a BlobStore block into the
+        # representation that mounts this encoder; the wire nests under this param.
+        entry["store_slot"] = store
     if not exportable:
         entry["not_exportable_reason"] = (
             f"needs {blocker!r}, which a flat spec can't express"
         )
     return entry
+
+
+def _store_slot(cls: type) -> dict | None:
+    """A `{"param", "kind"}` for a `BlobStore`-typed constructor param, else None.
+    This is how a self-managed encoder (BM25's optional `store: BlobStore`)
+    declares that Studio can wire it its own persistence backend — found by type,
+    so any future self-managed index gets the same treatment for free."""
+    for pname, hint in _ctor_params(cls):
+        h = _unwrap_optional(hint)
+        if isinstance(h, type) and issubclass(h, BlobStore):
+            return {"param": pname, "kind": "blob_store"}
+    return None
 
 
 def _encoder_slot(cls: type) -> dict | None:

@@ -1,8 +1,29 @@
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import { useStudio } from "../graph/store";
+import type { ManifestIndex } from "../manifest/load";
 import { stageAccent } from "../theme/tokens";
 import type { ComponentSpec } from "../manifest/types";
+
+// Whether a block can actually be built, and why not. A component is
+// unavailable when the registry marked it non-exportable, or when it's a
+// representation whose encoder family ships no implementation in this build
+// (e.g. `sparse` before any sparse encoder lands) — adding it would only lead
+// to an unfillable pick-list, so we grey it here instead.
+function availability(
+  comp: ComponentSpec,
+  mIndex: ManifestIndex,
+): { disabled: boolean; reason?: string } {
+  if (!comp.exportable) return { disabled: true, reason: comp.not_exportable_reason };
+  if (comp.encoder && mIndex.encoderChoices(comp.encoder.kind).length === 0) {
+    const family = comp.encoder.kind.replace(/_/g, " ");
+    return {
+      disabled: true,
+      reason: `No ${family} is installed in this build yet, so this block can't be built.`,
+    };
+  }
+  return { disabled: false };
+}
 
 // The block library as collapsible sections, one per stage, plus a search box —
 // so it stays compact (no long scroll) and a block is a click or a type away.
@@ -62,13 +83,18 @@ export function Palette() {
             </button>
             {isOpen && (
               <div className="group-body">
-                {comps.map((c) => (
-                  <PaletteBlock
-                    key={c.name}
-                    comp={c}
-                    onAdd={() => c.exportable && addNode(c.kind, c.name)}
-                  />
-                ))}
+                {comps.map((c) => {
+                  const { disabled, reason } = availability(c, mIndex);
+                  return (
+                    <PaletteBlock
+                      key={c.name}
+                      comp={c}
+                      disabled={disabled}
+                      reason={reason}
+                      onAdd={() => !disabled && addNode(c.kind, c.name)}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -78,8 +104,17 @@ export function Palette() {
   );
 }
 
-function PaletteBlock({ comp, onAdd }: { comp: ComponentSpec; onAdd: () => void }) {
-  const disabled = !comp.exportable;
+function PaletteBlock({
+  comp,
+  disabled,
+  reason,
+  onAdd,
+}: {
+  comp: ComponentSpec;
+  disabled: boolean;
+  reason?: string;
+  onAdd: () => void;
+}) {
   return (
     <div
       className={`block ${disabled ? "disabled" : ""}`}
@@ -87,10 +122,11 @@ function PaletteBlock({ comp, onAdd }: { comp: ComponentSpec; onAdd: () => void 
       draggable={!disabled}
       onClick={disabled ? undefined : onAdd}
       onDragStart={(e) => {
+        if (disabled) return;
         e.dataTransfer.setData("application/rag-block", JSON.stringify({ kind: comp.kind, name: comp.name }));
         e.dataTransfer.effectAllowed = "move";
       }}
-      title={disabled ? comp.not_exportable_reason : comp.doc.split("\n")[0]}
+      title={disabled ? reason : comp.doc.split("\n")[0]}
     >
       <span className="name">{comp.name}</span>
     </div>

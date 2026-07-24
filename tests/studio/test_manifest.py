@@ -80,7 +80,7 @@ def test_encoders_are_nested_blocks_not_stages(manifest):
 def test_the_corpus_node_has_a_many_representations_port(manifest):
     corpus = next(s for s in manifest["stages"] if s["kind"] == "corpus")
     assert corpus["out"] == "Corpus"
-    assert "Representation" in corpus["in"] and "Store" in corpus["in"]
+    assert "Representation" in corpus["in"] and "VectorStore" in corpus["in"]
     assert corpus["many_in"] == ["Representation"]
 
 
@@ -146,9 +146,9 @@ def test_store_and_blob_store_are_blocks(manifest):
 
 def test_corpus_gains_a_store_port_and_parser_a_blobstore_port(manifest):
     stage = {s["kind"]: s for s in manifest["stages"]}
-    assert "Store" in stage["corpus"]["in"]       # Store -> Corpus
-    assert "BlobStore" in stage["parser"]["in"]   # BlobStore -> parser
-    assert stage["vector_store"]["out"] == "Store"
+    assert "VectorStore" in stage["corpus"]["in"]  # VectorStore -> Corpus
+    assert "BlobStore" in stage["parser"]["in"]    # BlobStore -> parser
+    assert stage["vector_store"]["out"] == "VectorStore"
     assert stage["blob_store"]["out"] == "BlobStore"
 
 

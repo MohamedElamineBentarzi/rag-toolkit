@@ -1,7 +1,8 @@
 import type { Connection } from "@xyflow/react";
 import type { ManifestIndex } from "../manifest/load";
 import type { BlockNode, BlockEdge, Problem } from "./model";
-import { acceptsMany, parseHandle } from "./ports";
+import { parseHandle, type Port } from "./ports";
+import { corpusArity, corpusSpaces, findCorpus, repSpace } from "./corpus";
 
 // ---------------------------------------------------------------------------
 // Live connection validation — the headline feature. A connection is valid iff
@@ -18,10 +19,27 @@ export function connectionType(
   return { source: src.type, target: tgt.type };
 }
 
+/** Which target handles legitimately accept more than one edge: representations
+ *  fan into the Corpus, and a hybrid/composite retriever reads many Corpus
+ *  indexes. A single `index` retriever, and everything else, is one-in. */
+function acceptsMany(
+  targetNode: BlockNode,
+  port: Port,
+  mIndex: ManifestIndex | null,
+): boolean {
+  const kind = targetNode.data.kind;
+  if (kind === "corpus" && port.type === "Representation") return true;
+  if (kind === "retriever" && port.type === "Corpus") {
+    return corpusArity(mIndex?.component("retriever", targetNode.data.name)) !== "single";
+  }
+  return false;
+}
+
 export function isValidConnection(
   connection: Connection,
   nodes: BlockNode[],
   edges: BlockEdge[],
+  mIndex: ManifestIndex | null = null,
 ): boolean {
   if (connection.source === connection.target) return false; // no self-loop
 
@@ -33,14 +51,14 @@ export function isValidConnection(
   const tgt = parseHandle(connection.targetHandle);
   if (!targetNode || !tgt) return false;
 
-  // One edge per input handle, except the Corpus's Representation fan-in.
-  if (!acceptsMany(targetNode.data.kind, tgt)) {
+  // One edge per input handle, except the fan-in ports above.
+  if (!acceptsMany(targetNode, tgt, mIndex)) {
     const taken = edges.some(
       (e) => e.target === connection.target && e.targetHandle === connection.targetHandle,
     );
     if (taken) return false;
   }
-  // No duplicate of the exact same edge.
+  // No duplicate of the exact same edge (same source port -> same target port).
   return !edges.some(
     (e) =>
       e.source === connection.source &&
@@ -60,9 +78,16 @@ export function portIsCompatible(
 }
 
 // ---------------------------------------------------------------------------
-// Structural problems — what per-edge typing can't catch, recomputed on every
-// change so feedback stays instant even for non-type mistakes.
+// Structural problems — completeness, not just per-edge typing. A pipeline is
+// "valid" only when it is actually *connected*: every block's required inputs
+// are wired and its output is consumed, all the way to a real sink (a generator
+// answering, or — retrieval-only — a retriever). Recomputed on every change.
 // ---------------------------------------------------------------------------
+
+// Infrastructure inputs that are optional — a parser needs no blob store, a
+// corpus needs no vector store. Everything else on a block's input list is a
+// required connection.
+const OPTIONAL_INPUT_TYPES = new Set(["BlobStore", "VectorStore"]);
 
 export function computeProblems(
   nodes: BlockNode[],
@@ -70,58 +95,91 @@ export function computeProblems(
   mIndex: ManifestIndex,
 ): Problem[] {
   const problems: Problem[] = [];
+  const err = (message: string) => problems.push({ level: "error", message });
+  const warn = (message: string) => problems.push({ level: "warn", message });
+
+  const blocks = nodes.filter((n) => n.data.kind !== "endpoint" && n.data.kind !== "corpus");
+  const has = (kind: string) => nodes.some((n) => n.data.kind === kind);
+  const hasInto = (target: string, type: string) =>
+    edges.some((e) => e.target === target && e.targetHandle === `in:${type}`);
+  const outConsumed = (source: string, type: string) =>
+    edges.some((e) => e.source === source && e.sourceHandle === `out:${type}`);
 
   // Duplicate single-slot stages: two chunkers can't both be "the" chunker.
   const counts = new Map<string, number>();
-  for (const n of nodes) {
-    if (n.data.kind === "corpus") continue;
+  for (const n of blocks) {
     const stage = mIndex.stage(n.data.kind);
     if (stage?.single) counts.set(n.data.kind, (counts.get(n.data.kind) ?? 0) + 1);
   }
   for (const [kind, n] of counts) {
     if (n > 1)
-      problems.push({
-        level: "error",
-        message: `${n} ${kind} blocks — a pipeline has at most one. Remove the extras or make them a chain.`,
-      });
+      err(`${n} ${kind} blocks — a pipeline has at most one. Remove the extras or make them a chain.`);
   }
 
-  // A corpus-backed block whose Corpus input isn't wired to a Corpus node.
-  for (const n of nodes) {
-    const comp = mIndex.component(n.data.kind, n.data.name);
-    if (!comp?.takes_index) continue;
-    const wired = edges.some(
-      (e) => e.target === n.id && e.targetHandle === "in:Corpus",
-    );
-    if (!wired)
-      problems.push({
-        level: "error",
-        message: `${n.data.kind}:${n.data.name} needs the corpus — connect a Corpus to its Corpus port.`,
-      });
+  // Every block's required inputs must be wired (endpoints supply Source/Query
+  // automatically; BlobStore/Store are optional).
+  for (const n of blocks) {
+    const stage = mIndex.stage(n.data.kind);
+    for (const type of stage?.in ?? []) {
+      if (OPTIONAL_INPUT_TYPES.has(type)) continue;
+      if (!hasInto(n.id, type)) err(`${n.data.kind}:${n.data.name} needs its ${type} input connected.`);
+    }
   }
 
   // A representation missing the encoder it wraps (dense needs an embedder, …).
-  for (const n of nodes) {
+  for (const n of blocks) {
     if (n.data.kind !== "representations") continue;
     const comp = mIndex.component(n.data.kind, n.data.name);
     if (comp?.encoder && !n.data.encoder)
-      problems.push({
-        level: "error",
-        message: `${n.data.name} needs ${comp.encoder.kind} — pick one in the inspector.`,
-      });
+      err(`${n.data.name} needs ${comp.encoder.kind} — pick one in the inspector.`);
   }
 
-  // Representations present but nothing collects them into a corpus.
-  const reps = nodes.filter((n) => n.data.kind === "representations");
-  const hasCorpus = nodes.some((n) => n.data.kind === "corpus");
-  if (reps.length > 0 && !hasCorpus)
-    problems.push({
-      level: "warn",
-      message: "Representation blocks aren't feeding a Corpus node yet.",
-    });
+  // Two representations can't share a space — the corpus addresses each by it,
+  // and its output ports are keyed by it (so a clash silently hides one).
+  const spaceCounts = new Map<string, number>();
+  for (const n of blocks) {
+    if (n.data.kind !== "representations") continue;
+    const s = repSpace(n);
+    spaceCounts.set(s, (spaceCounts.get(s) ?? 0) + 1);
+  }
+  for (const [s, count] of spaceCounts) {
+    if (count > 1)
+      err(`Two representations share the name "${s}" — rename one (its "space") so each is distinct.`);
+  }
 
-  if (hasCycle(nodes, edges))
-    problems.push({ level: "error", message: "The graph has a cycle." });
+  // The sink of the pipeline: a generator answers; without one, the retriever is
+  // the terminal (retrieval-only). Its dangling ScoredChunk[] is allowed then.
+  const hasGenerator = has("generator");
+
+  // Every block's output must feed something, except the allowed terminal.
+  for (const n of blocks) {
+    const stage = mIndex.stage(n.data.kind);
+    const out = stage?.out;
+    if (!out) continue;
+    if (outConsumed(n.id, out)) continue;
+    if (n.data.kind === "vector_store" || n.data.kind === "blob_store") {
+      warn(`${n.data.kind}:${n.data.name} isn't connected to anything — it won't be used.`);
+    } else if (out === "ScoredChunk[]" && !hasGenerator) {
+      // retrieval-only terminal: the retriever/last refiner is the end.
+    } else {
+      err(`${n.data.kind}:${n.data.name} output isn't connected to anything.`);
+    }
+  }
+
+  // A corpus with no representations, or one that feeds no retriever.
+  const corpus = findCorpus(nodes);
+  if (corpus) {
+    if (corpusSpaces(corpus.id, nodes, edges).length === 0)
+      err("The Corpus has no representations — connect at least one.");
+    else if (!edges.some((e) => e.source === corpus.id))
+      err("The Corpus isn't feeding a retriever — wire one of its indexes into a retriever.");
+  }
+
+  // There has to be somewhere for the pipeline to end.
+  if (blocks.length > 0 && !has("retriever") && !hasGenerator)
+    err("A pipeline needs a retriever (and, to answer, a generator).");
+
+  if (hasCycle(nodes, edges)) err("The graph has a cycle.");
 
   return problems;
 }

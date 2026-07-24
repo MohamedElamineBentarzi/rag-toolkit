@@ -57,11 +57,21 @@ cd ../.. && python -m build                    # wheel now bundles the app + CLI
 ## Use it
 
 - **Drag** blocks from the left palette onto the canvas (or click them).
+- New blocks **auto-connect** into the pipeline by contract type as you drop
+  them, so nothing lands as an orphan — you can still rewire anything.
 - **Connect** an output port to an input port. A connection only forms when the
   contract types match (`Document` → `Document`, `Chunk[]` → `Chunk[]`, …);
   incompatible ports are refused and dimmed while you drag.
-- Representation blocks (embedder / sparse / lexical) fan into the **ChunkIndex**
-  node, which feeds the retriever — mirroring how a real `ChunkIndex` is wired.
+- Representation blocks fan into the **Corpus** node, which exposes **one index
+  output per representation**. Wire an index into a retriever to pick which
+  representation it reads — an `index` retriever takes one, a `hybrid` takes as
+  many as you give it. The wiring *is* the selection; there's no pick-list.
+- A **self-managed** representation (BM25/`lexical`) keeps its *own* index, so it
+  sprouts an optional **BlobStore** input port. Wire a `blob_store` block into it
+  to persist that index (it nests inside the encoder on export); leave it
+  unwired and it runs in-memory, rebuilt each run. The Corpus still owns the
+  shared vector store for the dense/sparse reps — the asymmetry is intentional
+  (see `docs/decisions/DR-0005`).
 - **Configure** the selected block on the right; read its **Info** tab for the
   docstring and every parameter.
 - **Export spec** downloads `pipeline.json`. Load it back in Python:
@@ -75,8 +85,9 @@ cd ../.. && python -m build                    # wheel now bundles the app + CLI
 
 ## What it deliberately doesn't do (v1)
 
-- Composite retrievers (`fusion`/`hyde`/`multi-query`) can't be expressed in a
-  flat spec, so they appear disabled with the reason.
+- Composite retrievers (`fusion`/`hyde`/`multi-query`) configure their nested
+  sub-retrievers in the inspector (the canvas keeps one clean retriever node);
+  each sub-retriever picks its representation from the Corpus indexes wired in.
 - No live "run this pipeline" preview and no server-side validation — those need
   an optional Python bridge that isn't part of the static v1.
 

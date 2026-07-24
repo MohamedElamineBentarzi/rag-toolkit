@@ -1,26 +1,9 @@
 import { useState } from "react";
 import { useStudio } from "../graph/store";
 import type { ManifestIndex } from "../manifest/load";
-import type { BlockNode, BlockEdge, SubRetriever } from "../graph/model";
+import type { BlockNode, SubRetriever } from "../graph/model";
 import type { ComponentSpec, ParamSpec } from "../manifest/types";
-
-// The representation spaces reachable from a retriever: follow its Corpus edge
-// to the corpus node, then collect the spaces of the representations feeding it
-// (a rep's space is its `space` param, defaulting to its name). Empty when the
-// retriever isn't wired to a corpus yet — the field falls back to free text.
-function connectedSpaces(nodeId: string, nodes: BlockNode[], edges: BlockEdge[]): string[] {
-  const corpusEdge = edges.find((e) => e.target === nodeId && e.targetHandle === "in:Corpus");
-  if (!corpusEdge) return [];
-  const spaces: string[] = [];
-  for (const e of edges) {
-    if (e.target !== corpusEdge.source || e.targetHandle !== "in:Representation") continue;
-    const rep = nodes.find((n) => n.id === e.source && n.data.kind === "representations");
-    if (!rep) continue;
-    const s = (typeof rep.data.params?.space === "string" && rep.data.params.space) || rep.data.name;
-    if (!spaces.includes(s)) spaces.push(s);
-  }
-  return spaces;
-}
+import { corpusArity, wiredSpaces } from "../graph/corpus";
 
 // The right drawer: configure the selected block, or read how it works. Both
 // tabs are generated from the manifest — the form fields from each param's type,
@@ -30,7 +13,6 @@ export function Inspector() {
   const [tab, setTab] = useState<"config" | "info">("config");
   const selectedId = useStudio((s) => s.selectedId);
   const node = useStudio((s) => s.nodes.find((n) => n.id === s.selectedId));
-  const nodes = useStudio((s) => s.nodes);
   const edges = useStudio((s) => s.edges);
   const mIndex = useStudio((s) => s.mIndex);
   const updateParams = useStudio((s) => s.updateParams);
@@ -68,9 +50,14 @@ export function Inspector() {
   const comp = mIndex.component(node.data.kind, node.data.name);
   if (!comp) return <div className="inspector" />;
 
-  // The representation spaces wired into this retriever's corpus — so
-  // `representation`/`representations` become a pick-list, not a typed string.
-  const spaces = node.data.kind === "retriever" ? connectedSpaces(node.id, nodes, edges) : [];
+  // A retriever selects its representation(s) by wiring Corpus index ports, so
+  // `spaces` is what's actually wired in — the pool its sub-retrievers pick from,
+  // and the read-only list a base retriever shows instead of a param field.
+  const isRetriever = node.data.kind === "retriever";
+  const arity = isRetriever ? corpusArity(comp) : "pool";
+  const spaces = isRetriever ? wiredSpaces(node.id, edges) : [];
+  // A base retriever's representation param is wired, not typed — hide it.
+  const hide = isRetriever && arity !== "pool" ? ["representation", "representations"] : [];
 
   return (
     <div className="inspector">
@@ -96,8 +83,10 @@ export function Inspector() {
             comp={comp}
             params={node.data.params}
             spaces={spaces}
+            hide={hide}
             onChange={(params) => updateParams(node.id, params)}
           />
+          {isRetriever && arity !== "pool" && <WiredReps arity={arity} spaces={spaces} />}
           {comp.encoder && (
             <EncoderEditor
               comp={comp}
@@ -123,6 +112,35 @@ export function Inspector() {
   );
 }
 
+// A base retriever's representations, read-only: they come from the Corpus index
+// ports wired into it, not a field here. Wire more indexes on the canvas to add
+// them (a single `index` retriever takes exactly one).
+function WiredReps({ arity, spaces }: { arity: "single" | "multi"; spaces: string[] }) {
+  return (
+    <div className="composite">
+      <div className="composite-head">Representations</div>
+      {spaces.length === 0 ? (
+        <div className="hint">
+          Wire a Corpus index into this retriever&rsquo;s <b>Corpus</b> port to choose{" "}
+          {arity === "single" ? "its representation" : "which representations to fuse"}.
+        </div>
+      ) : (
+        <ul className="wired-reps">
+          {spaces.map((s) => (
+            <li key={s}>
+              <span className="wr-dot" />
+              {s}
+            </li>
+          ))}
+        </ul>
+      )}
+      {arity === "multi" && (
+        <div className="hint">Wire more Corpus indexes to fuse them; all wired are used.</div>
+      )}
+    </div>
+  );
+}
+
 // A representation's wrapped encoder (the embedder/index it mounts), configured
 // here rather than as a separate graph node — the encoder has no meaning apart
 // from the representation that owns it, so it nests in the inspector (DR-0004 D7).
@@ -138,9 +156,23 @@ function EncoderEditor({
   onPatch: (patch: { encoder?: SubRetriever }) => void;
 }) {
   const slot = comp.encoder!;
-  const options = (mIndex.componentsByKind.get(slot.kind) ?? []).filter((c) => c.exportable);
+  const options = mIndex.encoderChoices(slot.kind);
   const value = node.data.encoder;
   const encComp = value ? mIndex.component(slot.kind, value.name) : undefined;
+  if (options.length === 0) {
+    const family = slot.kind.replace(/_/g, " ");
+    return (
+      <div className="composite">
+        <div className="composite-head">{slot.kind}</div>
+        <div className="hint">
+          No {family} is installed in this build yet, so <b>{comp.name}</b> can&rsquo;t be built.
+          {slot.kind === "sparse_encoder" && (
+            <> Use <b>lexical</b> (bm25) for keyword retrieval in the meantime.</>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="composite">
       <div className="composite-head">{slot.kind}</div>
@@ -166,6 +198,12 @@ function EncoderEditor({
             params={value.params}
             onChange={(params) => onPatch({ encoder: { name: value.name, params } })}
           />
+        )}
+        {encComp?.store_slot && (
+          <div className="hint">
+            Keeps its own index. Wire a <b>BlobStore</b> into this block&rsquo;s BlobStore port
+            to persist it — otherwise it runs in-memory (rebuilt each run).
+          </div>
         )}
       </div>
     </div>
@@ -314,20 +352,24 @@ function ConfigForm({
   comp,
   params,
   spaces = [],
+  hide = [],
   onChange,
 }: {
   comp: ComponentSpec;
   params: Record<string, unknown>;
   spaces?: string[];
+  hide?: string[];
   onChange: (p: Record<string, unknown>) => void;
 }) {
   if (!comp.params.length) {
     return <div className="empty">No parameters.</div>;
   }
+  const visible = comp.params.filter((p) => !hide.includes(p.name));
+  if (!visible.length) return null; // e.g. an `index` retriever, wired not typed
   const set = (name: string, value: unknown) => onChange({ ...params, [name]: value });
   return (
     <div>
-      {comp.params.map((p) => (
+      {visible.map((p) => (
         <Field key={p.name} p={p} value={params[p.name]} spaces={spaces} onChange={(v) => set(p.name, v)} />
       ))}
     </div>
@@ -348,14 +390,11 @@ function Field({ p, value, spaces, onChange }: { p: ParamSpec; value: unknown; s
 }
 
 function FieldInput({ p, value, spaces, onChange }: { p: ParamSpec; value: unknown; spaces: string[]; onChange: (v: unknown) => void }) {
-  // A retriever's representation selector, driven by the spaces actually wired
-  // into its corpus — a pick-list, never a typed-in magic string. Falls through
-  // to the plain widgets when no corpus is connected yet.
+  // A sub-retriever's representation selector, driven by the spaces wired into
+  // the composite's Corpus port — a pick-list, never a typed-in magic string.
+  // Falls through to the plain widgets when no index is wired yet.
   if (spaces.length && p.name === "representation") {
     return <RepresentationSelect spaces={spaces} value={value} onChange={onChange} />;
-  }
-  if (spaces.length && p.name === "representations") {
-    return <RepresentationsChecklist spaces={spaces} value={value} onChange={onChange} />;
   }
   switch (p.type) {
     case "bool":
@@ -424,40 +463,6 @@ function RepresentationSelect({
         <option value={current}>{current} (not connected)</option>
       )}
     </select>
-  );
-}
-
-// A subset of the corpus's representations to fuse (hybrid). No selection / all
-// selected both mean "all" — the default — so the box list reads naturally.
-function RepresentationsChecklist({
-  spaces,
-  value,
-  onChange,
-}: {
-  spaces: string[];
-  value: unknown;
-  onChange: (v: unknown) => void;
-}) {
-  const explicit = Array.isArray(value) ? (value as string[]) : null;
-  const selected = explicit ?? spaces; // null (default) = all
-  const toggle = (s: string) => {
-    const set = new Set(selected);
-    if (set.has(s)) set.delete(s);
-    else set.add(s);
-    const arr = spaces.filter((x) => set.has(x)); // stable order
-    // All or none → the default (null), which omits the param and fuses all.
-    onChange(arr.length === 0 || arr.length === spaces.length ? null : arr);
-  };
-  return (
-    <div className="checklist">
-      {spaces.map((s) => (
-        <label key={s} className="check">
-          <input type="checkbox" checked={selected.includes(s)} onChange={() => toggle(s)} />
-          {s}
-        </label>
-      ))}
-      {explicit === null && <div className="hint">All representations (default).</div>}
-    </div>
   );
 }
 

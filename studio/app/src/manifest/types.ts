@@ -35,6 +35,10 @@ export interface ComponentSpec {
    *  registry kind to offer (e.g. {param:"embedder", kind:"embedder"}). The
    *  encoder is picked in the inspector, not by a graph edge. */
   encoder?: { param: string; kind: string };
+  /** A self-managed encoder (BM25) that keeps its own isolated persistence
+   *  backend: which nested param takes a BlobStore. The Studio wires a BlobStore
+   *  block into the representation that mounts this encoder. */
+  store_slot?: { param: string; kind: string };
   /** An encoder block — offered inside a representation's inspector, not on the
    *  top-level palette. */
   nested?: boolean;

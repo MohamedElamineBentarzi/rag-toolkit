@@ -136,6 +136,28 @@
       "version": "0.1.0"
     },
     {
+      "doc": "Turns a Document into a stream of retrieval Chunks.",
+      "exportable": true,
+      "kind": "chunker",
+      "name": "markdown-fixed",
+      "params": [
+        {
+          "default": 1600,
+          "name": "max_chars",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": 200,
+          "name": "overlap_chars",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
       "doc": "Strategy interface: augment a document's chunk stream with context.",
       "exportable": true,
       "kind": "enrich",
@@ -701,6 +723,10 @@
           "type": "str"
         }
       ],
+      "store_slot": {
+        "kind": "blob_store",
+        "param": "store"
+      },
       "takes_index": false,
       "version": "0.2.0"
     }
@@ -776,7 +802,7 @@
       "chain": false,
       "in": [],
       "kind": "vector_store",
-      "out": "Store",
+      "out": "VectorStore",
       "single": true
     },
     {
@@ -789,7 +815,7 @@
     {
       "in": [
         "Representation",
-        "Store"
+        "VectorStore"
       ],
       "kind": "corpus",
       "many_in": [
@@ -827,7 +853,7 @@
     "Source": {
       "color": "#8b8b9e"
     },
-    "Store": {
+    "VectorStore": {
       "color": "#8f7dff"
     }
   }

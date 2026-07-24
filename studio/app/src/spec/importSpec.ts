@@ -2,6 +2,8 @@ import dagre from "@dagrejs/dagre";
 import type { ManifestIndex } from "../manifest/load";
 import type { BlockNode, BlockEdge, SubRetriever } from "../graph/model";
 import { handleId } from "../graph/ports";
+import { corpusArity, repSpace } from "../graph/corpus";
+import { repStoreSlot } from "../graph/store-slot";
 
 interface RetrieverEntry {
   name: string;
@@ -40,12 +42,12 @@ export function importSpec(
     nodes.push(node);
     return node;
   };
-  const connect = (a: BlockNode, type: string, b: BlockNode) =>
+  const connect = (a: BlockNode, type: string, b: BlockNode, space?: string) =>
     edges.push({
-      id: `e-${a.id}-${b.id}`,
+      id: `e-${a.id}-${b.id}-${type}${space ? `#${space}` : ""}`,
       source: a.id,
       target: b.id,
-      sourceHandle: handleId("out", type),
+      sourceHandle: handleId("out", type, space),
       targetHandle: handleId("in", type),
       style: { stroke: mIndex.typeColor(type) },
     });
@@ -107,12 +109,12 @@ export function importSpec(
   const generator = single("generator");
   const blob = single("blob_store");
 
-  const retrieverTakesCorpus = mIndex.component(
-    retriever?.data.kind ?? "", retriever?.data.name ?? "",
-  )?.takes_index;
-  const needsCorpus = reps.length > 0 || !!store || !!retrieverTakesCorpus;
+  const needsCorpus = reps.length > 0 || !!store;
   const corpus = needsCorpus ? mk("corpus", "Corpus", {}) : null;
-  if (corpus) corpus.data.synthetic = true;
+  if (corpus) {
+    corpus.type = "corpus";
+    corpus.data.synthetic = true;
+  }
 
   // Wire the backbone by type.
   if (blob && parser) connect(blob, "BlobStore", parser);
@@ -125,8 +127,15 @@ export function importSpec(
   if (chunkTail) for (const r of reps) connect(chunkTail, "Chunk[]", r);
   if (corpus) {
     for (const r of reps) connect(r, "Representation", corpus);
-    if (store) connect(store, "Store", corpus);
-    if (retriever) connect(corpus, "Corpus", retriever);
+    if (store) connect(store, "VectorStore", corpus);
+    // Wire the corpus indexes the retriever actually reads — one edge per space,
+    // recovered from its representation params (base) or its sub-retrievers'
+    // (composite). This is the inverse of compile's "wiring is the selection".
+    if (retriever) {
+      const available = reps.map(repSpace);
+      for (const space of retrieverSpaces(retriever, mIndex, available))
+        if (available.includes(space)) connect(corpus, "Corpus", retriever, space);
+    }
   }
   let scoredTail = retriever;
   for (const r of refiners) {
@@ -135,8 +144,51 @@ export function importSpec(
   }
   if (scoredTail && generator) connect(scoredTail, "ScoredChunk[]", generator);
 
+  // A self-managed rep whose encoder carries a nested store sub-spec: lift it
+  // out into a blob_store block wired into the rep (the inverse of compile).
+  for (const rep of reps) {
+    const slot = repStoreSlot(rep, mIndex);
+    const enc = rep.data.encoder;
+    if (!slot || !enc) continue;
+    const spec = enc.params[slot.param];
+    if (spec && typeof spec === "object" && !Array.isArray(spec) && "name" in spec) {
+      const s = spec as { name: string; params?: Record<string, unknown> };
+      delete enc.params[slot.param];
+      connect(mk("blob_store", s.name, s.params ?? {}), "BlobStore", rep);
+    }
+  }
+
   layout(nodes, edges);
   return { nodes, edges };
+}
+
+// Which corpus indexes a retriever reads, from its spec params:
+//   single (index)  -> its one `representation`
+//   multi  (hybrid) -> its `representations`, or all when omitted ("fuse all")
+//   pool (composite)-> the union its sub-retrievers each name, or all
+function retrieverSpaces(
+  retriever: BlockNode,
+  mIndex: ManifestIndex,
+  available: string[],
+): string[] {
+  const arity = corpusArity(mIndex.component("retriever", retriever.data.name));
+  if (arity === "single") {
+    const r = retriever.data.params?.representation;
+    return typeof r === "string" && r ? [r] : available.slice(0, 1);
+  }
+  if (arity === "multi") {
+    const rs = retriever.data.params?.representations;
+    return Array.isArray(rs) ? (rs as string[]) : available;
+  }
+  const subs = [retriever.data.inner, ...(retriever.data.retrievers ?? [])].filter(
+    Boolean,
+  ) as SubRetriever[];
+  const used: string[] = [];
+  for (const s of subs) {
+    const r = s.params?.representation;
+    if (typeof r === "string" && r && !used.includes(r)) used.push(r);
+  }
+  return used.length ? used : available;
 }
 
 // dagre left-to-right auto-layout so an imported spec reads like a pipeline.

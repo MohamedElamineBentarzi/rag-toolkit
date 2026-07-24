@@ -224,38 +224,46 @@ class PipelineBuilder:
         A representation wraps an encoder (an `Embedder`/`SparseEncoder`/
         `LexicalIndex`), which a flat spec can't carry inline — so it arrives as
         a nested `{"name", "params"}` sub-spec under the constructor param that
-        is Component-typed (`embedder`/`encoder`/`index`). The builder finds that
-        param *by its type* (not a hardcoded name), builds the encoder, and
-        injects it — the same nested-sub-spec seam a composite retriever uses for
-        `inner`, so a new representation kind needs no builder change (DR-0004).
+        is Component-typed (`embedder`/`encoder`/`index`). This nests to any
+        depth: a self-managed representation's `LexicalIndex` (BM25) may itself
+        take a `store: BlobStore` sub-spec, so the corpus keeps the shared vector
+        store while BM25 owns its own isolated blob store — `_build_component`
+        resolves the whole tree by type, so a new kind needs no builder change.
         """
         name, params = _unpack("representations", entry)
-        cls = registry.get("representation", name)
+        return cast(Representation, self._build_component("representation", name, params))
+
+    def _build_component(self, reg_kind: str, name: str, params: Mapping[str, Any]) -> Any:
+        """Build a registry component, recursively resolving every Component-typed
+        param that arrives as a nested `{"name", "params"}` sub-spec — a
+        representation's encoder, an encoder's `store`, and so on to any depth.
+        Component-typed params are found *by type* (`_encoder_kind`), so nesting
+        is Open/Closed: no param name is hardcoded here."""
+        cls = registry.get(reg_kind, name)
         wiring: dict[str, Any] = {}
         flat: dict[str, Any] = {}
-        for pname, value in params.items():
-            kind = _encoder_kind(cls, pname)
-            if kind is None:
-                flat[pname] = value       # a plain settable param (e.g. `space`)
+        for pname, value in (params or {}).items():
+            sub_kind = _encoder_kind(cls, pname)
+            if sub_kind is None:
+                flat[pname] = value       # a plain settable param (e.g. `space`, `k1`)
                 continue
             if not isinstance(value, Mapping) or "name" not in value:
                 raise ConfigError(
-                    f"PipelineBuilder: representation={name!r}: {pname!r} must be "
-                    f"a {kind} sub-spec {{'name': ...}}, got {value!r}"
+                    f"PipelineBuilder: {reg_kind}={name!r}: {pname!r} must be a "
+                    f"{sub_kind} sub-spec {{'name': ...}}, got {value!r}"
                 )
-            sub_params = dict(value.get("params") or {})
             try:
-                wiring[pname] = registry.create(kind, value["name"], **sub_params)
+                wiring[pname] = self._build_component(
+                    sub_kind, value["name"], value.get("params") or {}
+                )
             except ConfigError as exc:
                 raise ConfigError(
-                    f"PipelineBuilder: representation={name!r}.{pname}: {exc}"
+                    f"PipelineBuilder: {reg_kind}={name!r}.{pname}: {exc}"
                 ) from exc
         try:
-            return cast(Representation, cls(**wiring, **flat))
+            return cls(**wiring, **flat)
         except ConfigError as exc:
-            raise ConfigError(
-                f"PipelineBuilder: representation={name!r}: {exc}"
-            ) from exc
+            raise ConfigError(f"PipelineBuilder: {reg_kind}={name!r}: {exc}") from exc
 
     def _compose(self, name: str, entry: dict, **wiring: Any) -> Any:
         """Build a composite retriever from its already-built parts + its params."""

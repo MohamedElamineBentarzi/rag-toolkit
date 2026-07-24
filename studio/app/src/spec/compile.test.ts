@@ -125,6 +125,21 @@ describe("round trip (import -> compile)", () => {
     expect(compileSpec(nodes, edges, mIndex)).toEqual(spec);
   });
 
+  it("round-trips a lexical rep whose BM25 owns a wired blob store", () => {
+    // The blob store nests inside the encoder (BM25's own persistence) and must
+    // NOT also surface as the top-level pipeline blob_store stage.
+    const spec = {
+      representations: [
+        { name: "lexical", params: { index: { name: "bm25", params: { store: { name: "local", params: { root: "/data" } } } } } },
+      ],
+      generator: { name: "extractive", params: {} },
+    };
+    const { nodes, edges } = importSpec(spec, mIndex);
+    // import materialized a blob_store block wired into the lexical rep
+    expect(nodes.some((n) => n.data.kind === "blob_store")).toBe(true);
+    expect(compileSpec(nodes, edges, mIndex)).toEqual(spec);
+  });
+
   it("round-trips a spec with a vector store and blob store", () => {
     const spec = {
       parser: { name: "plaintext", params: {} },

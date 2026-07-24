@@ -14,6 +14,7 @@ import "@xyflow/react/dist/style.css";
 
 import { useStudio } from "./graph/store";
 import { BlockNode } from "./graph/BlockNode";
+import { CorpusNode } from "./graph/CorpusNode";
 import { EndpointNode } from "./graph/EndpointNode";
 import { isValidConnection as checkConnection } from "./graph/validate";
 import type { BlockNode as BlockNodeType, BlockEdge } from "./graph/model";
@@ -28,7 +29,7 @@ import { stageAccent } from "./theme/tokens";
 
 // Defined once, outside the component: React Flow warns (and rerenders) if
 // nodeTypes is a fresh object each render.
-const nodeTypes = { block: BlockNode, endpoint: EndpointNode };
+const nodeTypes = { block: BlockNode, corpus: CorpusNode, endpoint: EndpointNode };
 
 export default function App() {
   return (
@@ -49,6 +50,7 @@ function Studio() {
   const onConnectEnd = useStudio((s) => s.onConnectEnd);
   const addNode = useStudio((s) => s.addNode);
   const select = useStudio((s) => s.select);
+  const deleteEdge = useStudio((s) => s.deleteEdge);
   const { screenToFlowPosition, fitView } = useReactFlow();
 
   // The panels are sliding glass drawers, toggled from the toolbar.
@@ -67,7 +69,10 @@ function Studio() {
   // Only offer a connection to React Flow if the contract types match — this is
   // where the "invalid connections refuse to form" behavior lives.
   const isValidConnection: IsValidConnection<BlockEdge> = useCallback(
-    (c) => checkConnection(c as Connection, useStudio.getState().nodes, useStudio.getState().edges),
+    (c) => {
+      const s = useStudio.getState();
+      return checkConnection(c as Connection, s.nodes, s.edges, s.mIndex);
+    },
     [],
   );
 
@@ -109,8 +114,10 @@ function Studio() {
             onConnectEnd={onConnectEnd}
             isValidConnection={isValidConnection}
             onNodeClick={(_, node) => select(node.id)}
+            onEdgeClick={(_, edge) => deleteEdge(edge.id)}
             onPaneClick={() => select(null)}
             fitView
+            connectionRadius={28}
             proOptions={{ hideAttribution: true }}
             defaultEdgeOptions={{ animated: true }}
           >

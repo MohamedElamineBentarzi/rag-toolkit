@@ -11,9 +11,11 @@ import {
 import type { Manifest } from "../manifest/types";
 import { ManifestIndex } from "../manifest/load";
 import type { BlockNode, BlockEdge, BlockData, Problem } from "./model";
-import { handleId, parseHandle } from "./ports";
+import { parseHandle } from "./ports";
 import { computeProblems, isValidConnection } from "./validate";
 import { endpointEdges, endpointNodes, isEndpointId, mergeEdges } from "./endpoints";
+import { autoWireNewNode } from "./wire";
+import { pruneCorpusEdges, repSpace } from "./corpus";
 
 interface StudioState {
   manifest: Manifest | null;
@@ -32,6 +34,7 @@ interface StudioState {
   updateData: (id: string, patch: Partial<BlockData>) => void;
   select: (id: string | null) => void;
   deleteSelected: () => void;
+  deleteEdge: (id: string) => void;
   onNodesChange: (changes: NodeChange<BlockNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<BlockEdge>[]) => void;
   onConnect: (c: Connection) => void;
@@ -45,9 +48,11 @@ let counter = 0;
 const nextId = (kind: string, name: string) => `${kind}-${name}-${++counter}`;
 
 export const useStudio = create<StudioState>((set, get) => {
-  // Recompute the problems list after any structural change, in one place.
-  const withProblems = (nodes: BlockNode[], edges: BlockEdge[]) => {
+  // Recompute after any structural change, in one place: prune now-invalid
+  // corpus index edges, then recompute the problems list.
+  const withProblems = (nodes: BlockNode[], rawEdges: BlockEdge[]) => {
     const mIndex = get().mIndex;
+    const edges = pruneCorpusEdges(nodes, rawEdges);
     return { nodes, edges, problems: mIndex ? computeProblems(nodes, edges, mIndex) : [] };
   };
 
@@ -69,6 +74,21 @@ export const useStudio = create<StudioState>((set, get) => {
       const comp = mIndex.component(kind, name);
       const params: Record<string, unknown> = {};
       for (const p of comp?.params ?? []) params[p.name] = p.default;
+
+      // A representation is addressed by its *space* — the corpus keys one output
+      // port per space, so two spaces can't collide. The space defaults to the
+      // rep's type name ("dense"), so a second `dense` would clash: auto-name it
+      // "dense-2", "dense-3", … The user can rename it in the inspector.
+      if (kind === "representations") {
+        const used = new Set(
+          nodes.filter((n) => n.data.kind === "representations").map((n) => repSpace(n)),
+        );
+        if (used.has(name)) {
+          let i = 2;
+          while (used.has(`${name}-${i}`)) i++;
+          params.space = `${name}-${i}`;
+        }
+      }
 
       const node: BlockNode = {
         id: nextId(kind, name),
@@ -92,33 +112,20 @@ export const useStudio = create<StudioState>((set, get) => {
       }
 
       // Ensure the synthetic Corpus exists whenever something that attaches to it
-      // appears: a representation, a vector store, or a corpus-backed block. The
-      // blob store attaches to the parser instead, not the corpus.
+      // appears: a representation or a vector store. (A corpus with no
+      // representations has no index ports, so we don't spawn an empty one for a
+      // retriever — adding a representation creates it and wires it up.)
       const next = [...nodes, node];
-      const needsCorpus =
-        kind === "representations" || kind === "vector_store" || comp?.takes_index;
+      const needsCorpus = kind === "representations" || kind === "vector_store";
       if (needsCorpus && !next.some((n) => n.data.kind === "corpus")) {
         next.push(makeCorpusNode(next.length));
       }
 
-      // Auto-wire so a new block is never an orphan on the canvas — a sensible
-      // default edge the user can still rewire: representations and the store
-      // feed the corpus; corpus-backed blocks read from it; the blob store backs
-      // the parser (where caching + raw capture happen).
-      let nextEdges = edges;
-      const corpusNode = next.find((n) => n.data.kind === "corpus");
-      if (kind === "blob_store") {
-        const parser = next.find((n) => n.data.kind === "parser");
-        if (parser) nextEdges = addEdge(makeEdge(node.id, "BlobStore", parser.id, mIndex), nextEdges);
-      } else if (corpusNode) {
-        if (kind === "representations") {
-          nextEdges = addEdge(makeEdge(node.id, "Representation", corpusNode.id, mIndex), nextEdges);
-        } else if (kind === "vector_store") {
-          nextEdges = addEdge(makeEdge(node.id, "Store", corpusNode.id, mIndex), nextEdges);
-        } else if (comp?.takes_index) {
-          nextEdges = addEdge(makeEdge(corpusNode.id, "Corpus", node.id, mIndex), nextEdges);
-        }
-      }
+      // Auto-wire the new block into the pipeline by contract type, so it's never
+      // a floating orphan — a sensible default the user can still rewire.
+      const wired = autoWireNewNode(node, next, edges, mIndex);
+      let nextEdges = edges.filter((e) => !wired.remove.includes(e.id));
+      nextEdges = mergeEdges(nextEdges, wired.add);
       // Tie the endpoints in too (Source->parser, Query->retriever, generator->
       // Answer) so adding a parser/retriever/generator connects to its terminal.
       nextEdges = mergeEdges(nextEdges, endpointEdges(next, mIndex));
@@ -126,11 +133,14 @@ export const useStudio = create<StudioState>((set, get) => {
     },
 
     updateParams: (id, params) =>
-      set((s) => ({
-        nodes: s.nodes.map((n) =>
+      set((s) => {
+        const nodes = s.nodes.map((n) =>
           n.id === id ? { ...n, data: { ...n.data, params } } : n,
-        ),
-      })),
+        );
+        // A representation's `space` param drives the corpus index ports, so a
+        // rename can invalidate a wired edge — reconcile and re-check.
+        return withProblems(nodes, s.edges);
+      }),
 
     updateData: (id, patch) =>
       set((s) => ({
@@ -151,6 +161,11 @@ export const useStudio = create<StudioState>((set, get) => {
       set({ ...withProblems(next, nextEdges), selectedId: null });
     },
 
+    // Click a connection to remove it. Endpoint wiring re-appears only when a
+    // block is next added (mergeEdges), so a deliberate cut otherwise stays cut.
+    deleteEdge: (id) =>
+      set((s) => withProblems(s.nodes, s.edges.filter((e) => e.id !== id))),
+
     onNodesChange: (changes) =>
       set((s) => {
         // Endpoints can be moved but never removed (belt-and-suspenders beside
@@ -170,7 +185,7 @@ export const useStudio = create<StudioState>((set, get) => {
 
     onConnect: (c) =>
       set((s) => {
-        if (!isValidConnection(c, s.nodes, s.edges)) return {};
+        if (!isValidConnection(c, s.nodes, s.edges, s.mIndex)) return {};
         const src = parseHandle(c.sourceHandle);
         const edge: BlockEdge = {
           ...c,
@@ -207,26 +222,10 @@ function tile(i: number): { x: number; y: number } {
   return { x: 60 + (i % 4) * 260, y: 70 + Math.floor(i / 4) * 168 };
 }
 
-function makeEdge(
-  source: string,
-  type: string,
-  target: string,
-  mIndex: ManifestIndex,
-): BlockEdge {
-  return {
-    id: `e-${source}-${target}-${type}`,
-    source,
-    target,
-    sourceHandle: handleId("out", type),
-    targetHandle: handleId("in", type),
-    style: { stroke: mIndex.typeColor(type) },
-  };
-}
-
 function makeCorpusNode(order: number): BlockNode {
   return {
     id: nextId("corpus", "corpus"),
-    type: "block",
+    type: "corpus",
     position: tile(order),
     data: { kind: "corpus", name: "Corpus", params: {}, synthetic: true },
   };

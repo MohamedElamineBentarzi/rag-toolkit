@@ -53,6 +53,24 @@ def test_representations_become_the_corpus():
     assert set(rag.corpus.representations()) == {"dense", "lexical"}
 
 
+def test_a_self_managed_encoder_gets_its_own_nested_store(tmp_path):
+    # BM25 keeps its OWN isolated blob store (the deliberate asymmetry): the
+    # corpus owns the shared vector store, BM25 owns its persistence. The builder
+    # resolves the nested store sub-spec by type, to any depth (rep -> index ->
+    # store) — no param name hardcoded.
+    from rag_blocks.storage.base import BlobStore
+
+    rag = PipelineBuilder().build({
+        "representations": [
+            {"name": "lexical", "params": {"index": {"name": "bm25", "params": {
+                "store": {"name": "local", "params": {"root": str(tmp_path)}}}}}},
+        ]
+    })
+    rep = rag.corpus._by_space["lexical"]
+    index = rep.encoder                       # the BM25Index
+    assert isinstance(index._store, BlobStore)   # a live store, not a dict
+
+
 def test_a_new_representation_kind_needs_no_builder_change():
     # The Open/Closed win: a representation is named in the list like any other
     # registered component; its encoder nests as a sub-spec the builder resolves
