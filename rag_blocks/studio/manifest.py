@@ -132,6 +132,12 @@ TYPE_COLORS: dict[str, str] = {
 #: so the manifest emits them too, flagged `nested`.
 ENCODER_KINDS = ("embedder", "sparse_encoder", "lexical_index")
 
+#: Registry kinds a component *wraps* and configures as a nested sub-form rather
+#: than a top-level palette block: representation encoders, plus a parser's OCR
+#: engine (DoclingParser's `ocr_engine`). Emitted as `nested` components so the
+#: inspector can offer a picker + the wrapped component's own config.
+NESTED_KINDS = (*ENCODER_KINDS, "ocr")
+
 
 def build_manifest() -> dict:
     """Introspect the registry into the Studio manifest dict."""
@@ -140,10 +146,11 @@ def build_manifest() -> dict:
     for stage, reg_kind in SPEC_KINDS.items():
         for name in registry.available(reg_kind):
             components.append(_component(stage, name))
-    # Encoders: available for nesting inside a representation, not as stages.
-    for reg_kind in ENCODER_KINDS:
+    # Nested components: encoders (inside a representation) and OCR engines
+    # (inside a parser) — offered as config sub-forms, not palette blocks.
+    for reg_kind in NESTED_KINDS:
         for name in registry.available(reg_kind):
-            components.append(_encoder_component(reg_kind, name))
+            components.append(_nested_component(reg_kind, name))
     return {
         "types": {t: {"color": c} for t, c in TYPE_COLORS.items()},
         "stages": stages,
@@ -173,6 +180,7 @@ def _component(stage: str, name: str) -> dict:
     exportable, blocker = _exportability(cls)
     slot, needs_llm = _composite_shape(cls)
     encoder = _encoder_slot(cls) if stage == "representations" else None
+    params = _params(cls)
     entry: dict[str, Any] = {
         "kind": stage,
         "name": name,
@@ -182,8 +190,15 @@ def _component(stage: str, name: str) -> dict:
         # A representation's encoder nests as a sub-spec (like a composite's
         # `inner`), so its Component-typed param never blocks export.
         "exportable": True if encoder is not None else exportable,
-        "params": _params(cls),
+        "params": params,
     }
+    _annotate_dispatcher(stage, params)
+    engine = _engine_slot(params)
+    if engine is not None:
+        # A parser that wraps a registry-named engine (DoclingParser's OCR): the
+        # inspector renders a picker + the engine's config, not a free-text name
+        # and a raw-JSON blob.
+        entry["engine_slot"] = engine
     if encoder is not None:
         # Which nested param holds the wrapped encoder, and its registry kind —
         # so the inspector renders a sub-picker over that kind's blocks.
@@ -204,9 +219,44 @@ def _component(stage: str, name: str) -> dict:
     return entry
 
 
-def _encoder_component(reg_kind: str, name: str) -> dict:
-    """An encoder (embedder/sparse_encoder/lexical_index) as a `nested` block —
-    offered inside a representation's inspector, not as a top-level stage."""
+def _annotate_dispatcher(stage: str, params: list[dict]) -> None:
+    """The dispatcher parser (`auto`) carries two maps that read as raw JSON but
+    are structured: `routes` (file format → parser name) and `parser_configs`
+    (parser name → that parser's config overrides). Tag them so the Studio
+    renders a parser-dropdown table and per-parser config sub-forms instead of a
+    JSON blob. Keyed by the well-known param names on a parser."""
+    if stage != "parser":
+        return
+    for p in params:
+        if p["type"] != "json":
+            continue
+        if p["name"] == "routes":
+            p["map_value_kind"] = "parser"     # values are parser names
+        elif p["name"] == "parser_configs":
+            p["config_map_kind"] = "parser"    # values are a parser's config
+
+
+def _engine_slot(params: list[dict]) -> dict | None:
+    """A component that wraps a registry-named engine via the paired convention
+    `<kind>_engine` (its registry name) + `<kind>_engine_config` (its config
+    dict) — the `DoclingParser`'s `ocr_engine`/`ocr_engine_config`. Described so
+    the Studio renders a picker over that kind's engines plus the chosen
+    engine's own config sub-form, instead of a free-text name and a raw-JSON
+    blob. Found by the naming convention, so a new engine-wrapping component
+    needs no change here."""
+    names = {p["name"] for p in params}
+    for p in params:
+        n = p["name"]
+        if n.endswith("_engine") and p["type"] == "str" and f"{n}_config" in names:
+            kind = n[: -len("_engine")]
+            if registry.available(kind):
+                return {"kind": kind, "name_param": n, "config_param": f"{n}_config"}
+    return None
+
+
+def _nested_component(reg_kind: str, name: str) -> dict:
+    """A wrapped component (an encoder, or a parser's OCR engine) as a `nested`
+    block — offered inside another block's inspector, not as a top-level stage."""
     cls = registry.get(reg_kind, name)
     exportable, blocker = _exportability(cls)
     entry: dict[str, Any] = {

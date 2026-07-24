@@ -65,6 +65,26 @@ describe("compileSpec (graph -> spec)", () => {
   });
 });
 
+describe("a parser's wrapped OCR engine", () => {
+  it("keeps the engine name + config but drops the engine's secret", () => {
+    const nodes = [
+      node("p", "parser", "docling", {
+        ocr_policy: "auto", // default -> omitted
+        ocr_engine: "mistral",
+        ocr_engine_config: { model: "custom-ocr", api_key: "sk-leak", timeout_ms: 5000 },
+      }),
+    ];
+    const spec = compileSpec(nodes, [], mIndex) as {
+      parser: { name: string; params: Record<string, unknown> };
+    };
+    expect(spec.parser.name).toBe("docling");
+    expect(spec.parser.params.ocr_engine).toBe("mistral");
+    const cfg = spec.parser.params.ocr_engine_config as Record<string, unknown>;
+    expect(cfg).not.toHaveProperty("api_key"); // §7.4: secret never in a spec
+    expect(cfg).toHaveProperty("model", "custom-ocr");
+  });
+});
+
 describe("infrastructure blocks (store + blob_store)", () => {
   it("emits them, dropping the store's and blob store's secrets", () => {
     const nodes = [
