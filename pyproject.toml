@@ -43,7 +43,9 @@ ragas = ["ragas>=0.2"]
 all = [
     "rag-blocks[docling,mistral,google,minio,sentence-transformers,qdrant,anthropic,ragas]"
 ]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11"]
+# ruff is capped: 0.16 changed default rules (isort I001, C408) and would flag
+# the whole tree; bump the cap deliberately after conforming, not by accident.
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6,<0.16", "mypy>=1.11"]
 
 [project.scripts]
 # `rag-blocks studio` launches the optional visual pipeline builder from the
