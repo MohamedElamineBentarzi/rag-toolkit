@@ -10,8 +10,14 @@ export interface ParamSpec {
   default: unknown;
   required: boolean;
   choices?: (string | number)[];
-  /** A credential (§7.4): shown as a password field, dropped on export. */
+  /** A credential (§7.4): comes from the environment, never entered/exported. */
   secret?: boolean;
+  /** A dispatcher map whose values are component names of this kind (auto's
+   *  `routes`: format → parser). Rendered as a keyed dropdown table. */
+  map_value_kind?: string;
+  /** A dispatcher map of component-name → that component's config overrides
+   *  (auto's `parser_configs`). Rendered as per-component config sub-forms. */
+  config_map_kind?: string;
 }
 
 export interface ComponentSpec {
@@ -39,6 +45,10 @@ export interface ComponentSpec {
    *  backend: which nested param takes a BlobStore. The Studio wires a BlobStore
    *  block into the representation that mounts this encoder. */
   store_slot?: { param: string; kind: string };
+  /** A component that wraps a registry-named engine (the DoclingParser's OCR):
+   *  `name_param` holds the engine's name, `config_param` its config dict. The
+   *  inspector renders a picker over `kind` + the engine's own config sub-form. */
+  engine_slot?: { kind: string; name_param: string; config_param: string };
   /** An encoder block — offered inside a representation's inspector, not on the
    *  top-level palette. */
   nested?: boolean;

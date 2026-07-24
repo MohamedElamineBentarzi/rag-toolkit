@@ -10,7 +10,7 @@ import pytest
 
 from rag_blocks.core.registry import registry
 from rag_blocks.evaluation.space import CHAIN_STAGES, SPEC_KINDS
-from rag_blocks.studio.manifest import ENCODER_KINDS, build_manifest
+from rag_blocks.studio.manifest import NESTED_KINDS, build_manifest
 
 
 @pytest.fixture(scope="module")
@@ -28,14 +28,15 @@ def test_top_level_shape(manifest):
 
 def test_every_registered_component_appears(manifest):
     # The whole point: nothing registered is missing from the palette — the
-    # stage components plus the encoders that nest inside a representation.
+    # stage components plus the nested ones (representation encoders, OCR
+    # engines) that configure inside another block's inspector.
     expected = {
         (stage, name)
         for stage, reg_kind in SPEC_KINDS.items()
         for name in registry.available(reg_kind)
     } | {
         (reg_kind, name)
-        for reg_kind in ENCODER_KINDS
+        for reg_kind in NESTED_KINDS
         for name in registry.available(reg_kind)
     }
     got = {(c["kind"], c["name"]) for c in manifest["components"]}
@@ -142,6 +143,24 @@ def test_store_and_blob_store_are_blocks(manifest):
     assert ("vector_store", "memory") in names
     assert ("blob_store", "minio") in names
     assert ("blob_store", "local") in names
+
+
+def test_ocr_engines_are_emitted_as_nested_blocks(manifest):
+    ocr = [c for c in manifest["components"] if c["kind"] == "ocr"]
+    assert {c["name"] for c in ocr} >= {"mistral", "google-docai"}
+    assert all(c.get("nested") for c in ocr)
+    # mistral's api_key is a secret, surfaced for the config sub-form to redact.
+    mistral = next(c for c in ocr if c["name"] == "mistral")
+    assert any(p["name"] == "api_key" and p.get("secret") for p in mistral["params"])
+
+
+def test_docling_declares_its_ocr_engine_slot(manifest):
+    docling = _by_name(manifest, "docling")
+    assert docling["engine_slot"] == {
+        "kind": "ocr",
+        "name_param": "ocr_engine",
+        "config_param": "ocr_engine_config",
+    }
 
 
 def test_corpus_gains_a_store_port_and_parser_a_blobstore_port(manifest):

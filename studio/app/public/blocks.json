@@ -17,11 +17,13 @@
             "txt": "plaintext",
             "xlsx": "docling"
           },
+          "map_value_kind": "parser",
           "name": "routes",
           "required": false,
           "type": "json"
         },
         {
+          "config_map_kind": "parser",
           "default": {},
           "name": "parser_configs",
           "required": false,
@@ -33,6 +35,11 @@
     },
     {
       "doc": "Turns a Source into a stream of markdown Pages.",
+      "engine_slot": {
+        "config_param": "ocr_engine_config",
+        "kind": "ocr",
+        "name_param": "ocr_engine"
+      },
       "exportable": true,
       "kind": "parser",
       "name": "docling",
@@ -508,6 +515,71 @@
       "version": "0.1.0"
     },
     {
+      "doc": "Strategy interface: (query, context) \u2192 Answer with citations.",
+      "exportable": true,
+      "kind": "generator",
+      "name": "openrouter",
+      "params": [
+        {
+          "default": "openai/gpt-4o-mini",
+          "name": "model",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": 1024,
+          "name": "max_tokens",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "api_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": 8000,
+          "name": "max_context_chars",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "default": null,
+          "name": "system",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "temperature",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "default": null,
+          "name": "site_url",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "site_name",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": 60.0,
+          "name": "timeout",
+          "required": false,
+          "type": "float"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
       "doc": "Strategy interface: a named, typed, multi-vector upsert-and-search index.",
       "exportable": true,
       "kind": "vector_store",
@@ -729,6 +801,53 @@
       },
       "takes_index": false,
       "version": "0.2.0"
+    },
+    {
+      "doc": "OCR pages through a Google Document AI processor.\n\n`processor_name` is the full resource path:\n    projects/{project}/locations/{location}/processors/{processor_id}",
+      "exportable": true,
+      "kind": "ocr",
+      "name": "google-docai",
+      "nested": true,
+      "params": [
+        {
+          "default": "",
+          "name": "processor_name",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
+    },
+    {
+      "doc": "OCR pages through Mistral's dedicated OCR model.\n\nA nice property of this provider: it natively outputs *markdown*\n(tables, headings included), so no post-processing layer is needed \u2014\nthe adapter is almost a pass-through.",
+      "exportable": true,
+      "kind": "ocr",
+      "name": "mistral",
+      "nested": true,
+      "params": [
+        {
+          "default": "mistral-ocr-latest",
+          "name": "model",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "default": null,
+          "name": "api_key",
+          "required": false,
+          "secret": true,
+          "type": "str"
+        },
+        {
+          "default": 120000,
+          "name": "timeout_ms",
+          "required": false,
+          "type": "int"
+        }
+      ],
+      "takes_index": false,
+      "version": "0.1.0"
     }
   ],
   "stages": [

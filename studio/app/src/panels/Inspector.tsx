@@ -56,8 +56,11 @@ export function Inspector() {
   const isRetriever = node.data.kind === "retriever";
   const arity = isRetriever ? corpusArity(comp) : "pool";
   const spaces = isRetriever ? wiredSpaces(node.id, edges) : [];
-  // A base retriever's representation param is wired, not typed — hide it.
+  // A base retriever's representation param is wired, not typed — hide it. A
+  // component that wraps an engine (docling's OCR) hides its raw name + config
+  // params too; the EngineEditor renders them as a picker + sub-form.
   const hide = isRetriever && arity !== "pool" ? ["representation", "representations"] : [];
+  if (comp.engine_slot) hide.push(comp.engine_slot.name_param, comp.engine_slot.config_param);
 
   return (
     <div className="inspector">
@@ -84,9 +87,18 @@ export function Inspector() {
             params={node.data.params}
             spaces={spaces}
             hide={hide}
+            mIndex={mIndex}
             onChange={(params) => updateParams(node.id, params)}
           />
           {isRetriever && arity !== "pool" && <WiredReps arity={arity} spaces={spaces} />}
+          {comp.engine_slot && (
+            <EngineEditor
+              slot={comp.engine_slot}
+              params={node.data.params}
+              mIndex={mIndex}
+              onChange={(params) => updateParams(node.id, params)}
+            />
+          )}
           {comp.encoder && (
             <EncoderEditor
               comp={comp}
@@ -136,6 +148,178 @@ function WiredReps({ arity, spaces }: { arity: "single" | "multi"; spaces: strin
       )}
       {arity === "multi" && (
         <div className="hint">Wire more Corpus indexes to fuse them; all wired are used.</div>
+      )}
+    </div>
+  );
+}
+
+// A component's wrapped engine picked here, not typed as a name string + raw
+// JSON. The chosen engine's name lives in `name_param`, its config (a normal
+// form over the engine's own params — secrets as password fields) in
+// `config_param`. This is what surfaces the OCR engines in the Studio: the
+// DoclingParser's `ocr_engine` becomes a dropdown of the installed OCR engines.
+function EngineEditor({
+  slot,
+  params,
+  mIndex,
+  onChange,
+}: {
+  slot: { kind: string; name_param: string; config_param: string };
+  params: Record<string, unknown>;
+  mIndex: ManifestIndex;
+  onChange: (params: Record<string, unknown>) => void;
+}) {
+  const options = (mIndex.componentsByKind.get(slot.kind) ?? []).filter((c) => c.exportable);
+  const name = params[slot.name_param];
+  const current = typeof name === "string" ? name : "";
+  const cfg = (params[slot.config_param] as Record<string, unknown>) ?? {};
+  const engComp = current ? mIndex.component(slot.kind, current) : undefined;
+
+  const pick = (value: string) =>
+    onChange({
+      ...params,
+      [slot.name_param]: value || null,
+      [slot.config_param]: value ? mIndex.defaultParams(slot.kind, value) : {},
+    });
+
+  return (
+    <div className="composite">
+      <div className="composite-head">{slot.kind} engine</div>
+      <div className="sub-retriever">
+        <div className="sub-head">
+          <select value={current} onChange={(e) => pick(e.target.value)}>
+            <option value="">— built-in / none —</option>
+            {options.map((o) => (
+              <option key={o.name} value={o.name}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {engComp && engComp.params.length > 0 && (
+          <ConfigForm
+            comp={engComp}
+            params={cfg}
+            mIndex={mIndex}
+            onChange={(next) => onChange({ ...params, [slot.config_param]: next })}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// The `auto` parser's `routes` map — file format → parser — as a dropdown per
+// format instead of a JSON blob. Rows come from the current value (falling back
+// to the default routes), each picking from the real parsers (never `auto`).
+function RouteTable({
+  p,
+  value,
+  mIndex,
+  onChange,
+}: {
+  p: ParamSpec;
+  value: unknown;
+  mIndex: ManifestIndex;
+  onChange: (v: unknown) => void;
+}) {
+  const routes = (
+    value && typeof value === "object" && !Array.isArray(value) ? value : p.default
+  ) as Record<string, string>;
+  const parsers = (mIndex.componentsByKind.get("parser") ?? []).filter(
+    (c) => c.name !== "auto" && c.exportable,
+  );
+  return (
+    <div className="field">
+      <label>
+        routes <span className="field-note">file format → parser</span>
+      </label>
+      <div className="routes">
+        {Object.keys(routes).map((fmt) => (
+          <div className="route-row" key={fmt}>
+            <span className="route-key">{fmt}</span>
+            <select value={routes[fmt] ?? ""} onChange={(e) => onChange({ ...routes, [fmt]: e.target.value })}>
+              {parsers.map((pp) => (
+                <option key={pp.name} value={pp.name}>
+                  {pp.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// The `auto` parser's `parser_configs` — per-parser config overrides — as a
+// collapsible config sub-form for each parser its routes actually use, instead
+// of nested JSON. A parser that wraps an engine (docling's OCR) gets its picker
+// here too, so OCR is configurable *through* auto.
+function ParserConfigs({
+  value,
+  routes,
+  mIndex,
+  onChange,
+}: {
+  value: unknown;
+  routes: unknown;
+  mIndex: ManifestIndex;
+  onChange: (v: unknown) => void;
+}) {
+  const configs = (
+    value && typeof value === "object" && !Array.isArray(value) ? value : {}
+  ) as Record<string, Record<string, unknown>>;
+  const routeMap = (routes && typeof routes === "object" ? routes : {}) as Record<string, string>;
+  const used = [...new Set(Object.values(routeMap))].filter((n) => n && n !== "auto");
+  if (!used.length) return null;
+  return (
+    <div className="field">
+      <label>
+        parser settings <span className="field-note">per routed parser</span>
+      </label>
+      {used.map((parser) => {
+        const comp = mIndex.component("parser", parser);
+        if (!comp || comp.params.length === 0) return null;
+        return (
+          <ParserConfigSection
+            key={parser}
+            comp={comp}
+            params={configs[parser] ?? {}}
+            mIndex={mIndex}
+            onChange={(cfg) => onChange({ ...configs, [parser]: cfg })}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function ParserConfigSection({
+  comp,
+  params,
+  mIndex,
+  onChange,
+}: {
+  comp: ComponentSpec;
+  params: Record<string, unknown>;
+  mIndex: ManifestIndex;
+  onChange: (cfg: Record<string, unknown>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const hide = comp.engine_slot ? [comp.engine_slot.name_param, comp.engine_slot.config_param] : [];
+  return (
+    <div className="composite">
+      <button className={`composite-head toggle ${open ? "open" : ""}`} onClick={() => setOpen((o) => !o)}>
+        <span className="chev" /> {comp.name}
+      </button>
+      {open && (
+        <div className="sub-retriever">
+          <ConfigForm comp={comp} params={params} hide={hide} mIndex={mIndex} onChange={onChange} />
+          {comp.engine_slot && (
+            <EngineEditor slot={comp.engine_slot} params={params} mIndex={mIndex} onChange={onChange} />
+          )}
+        </div>
       )}
     </div>
   );
@@ -196,6 +380,7 @@ function EncoderEditor({
           <ConfigForm
             comp={encComp}
             params={value.params}
+            mIndex={mIndex}
             onChange={(params) => onPatch({ encoder: { name: value.name, params } })}
           />
         )}
@@ -335,7 +520,7 @@ function SubRetrieverEditor({
         )}
       </div>
       {comp && comp.params.length > 0 && (
-        <ConfigForm comp={comp} params={value.params} spaces={spaces} onChange={(params) => onChange({ name: value.name, params })} />
+        <ConfigForm comp={comp} params={value.params} spaces={spaces} mIndex={mIndex} onChange={(params) => onChange({ name: value.name, params })} />
       )}
     </div>
   );
@@ -353,12 +538,14 @@ function ConfigForm({
   params,
   spaces = [],
   hide = [],
+  mIndex,
   onChange,
 }: {
   comp: ComponentSpec;
   params: Record<string, unknown>;
   spaces?: string[];
   hide?: string[];
+  mIndex: ManifestIndex;
   onChange: (p: Record<string, unknown>) => void;
 }) {
   if (!comp.params.length) {
@@ -369,9 +556,15 @@ function ConfigForm({
   const set = (name: string, value: unknown) => onChange({ ...params, [name]: value });
   return (
     <div>
-      {visible.map((p) => (
-        <Field key={p.name} p={p} value={params[p.name]} spaces={spaces} onChange={(v) => set(p.name, v)} />
-      ))}
+      {visible.map((p) => {
+        // A dispatcher map (auto's routes / parser_configs) is a structured form,
+        // not raw JSON.
+        if (p.map_value_kind)
+          return <RouteTable key={p.name} p={p} value={params[p.name]} mIndex={mIndex} onChange={(v) => set(p.name, v)} />;
+        if (p.config_map_kind)
+          return <ParserConfigs key={p.name} value={params[p.name]} routes={params.routes} mIndex={mIndex} onChange={(v) => set(p.name, v)} />;
+        return <Field key={p.name} p={p} value={params[p.name]} spaces={spaces} onChange={(v) => set(p.name, v)} />;
+      })}
     </div>
   );
 }
@@ -383,8 +576,14 @@ function Field({ p, value, spaces, onChange }: { p: ParamSpec; value: unknown; s
         {p.name}
         {p.required ? " *" : ""} {p.secret ? "🔒" : ""}
       </label>
-      <FieldInput p={p} value={value} spaces={spaces} onChange={onChange} />
-      {p.secret && <div className="hint">Secret — set via environment; never saved to the spec.</div>}
+      {p.secret ? (
+        // The Studio only exports a spec, and secrets never enter one (§7.4), so
+        // there is nothing to type here — the value comes from the environment
+        // at run time. Show that instead of a dead input.
+        <div className="secret-note">From the environment at run time — never entered here or saved to the spec.</div>
+      ) : (
+        <FieldInput p={p} value={value} spaces={spaces} onChange={onChange} />
+      )}
     </div>
   );
 }

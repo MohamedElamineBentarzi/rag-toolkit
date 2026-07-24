@@ -130,6 +130,20 @@ function entry(
     }
   }
 
+  // A wrapped engine (docling's OCR): clean its config against the *engine's*
+  // own param specs so its secrets (a mistral api_key) and defaults are dropped
+  // — the raw dict param wouldn't otherwise be scrubbed. Omit an empty config.
+  if (comp?.engine_slot) {
+    const { name_param, config_param, kind } = comp.engine_slot;
+    const engName = node.data.params[name_param];
+    if (typeof engName === "string" && engName) {
+      const raw = (node.data.params[config_param] as Record<string, unknown>) ?? {};
+      const cleaned = cleanParams(kind, engName, raw, mIndex);
+      if (Object.keys(cleaned).length) params[config_param] = cleaned;
+      else delete params[config_param];
+    }
+  }
+
   const out: SpecEntry = { name: node.data.name, params };
   if (comp?.composite === "inner" && node.data.inner) {
     out.inner = subEntry(node.data.inner, mIndex);

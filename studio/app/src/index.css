@@ -766,6 +766,76 @@ button.primary:hover {
   margin-top: 4px;
 }
 
+/* A secret param (§7.4): no input — the Studio only exports a spec and secrets
+   come from the environment. A quiet note replaces the dead field. */
+.secret-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px dashed var(--glass-border-strong);
+  border-radius: 7px;
+  padding: 7px 9px;
+}
+
+/* A small qualifier next to a field label, e.g. "file format → parser". */
+.field-note {
+  font: 400 10px var(--font-sans);
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* The dispatcher `routes` map as a table: one row per format, a parser dropdown. */
+.routes {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.route-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.route-row .route-key {
+  flex: 0 0 64px;
+  font: 600 11px var(--font-mono);
+  color: var(--text-dim);
+}
+.route-row select {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  border: 1px solid var(--glass-border-strong);
+  border-radius: 6px;
+  padding: 5px 7px;
+  font: 12.5px var(--font-sans);
+}
+
+/* A collapsible config header (parser_configs sub-forms). */
+.composite-head.toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 6px 0;
+  cursor: pointer;
+  text-align: left;
+}
+.composite-head.toggle .chev {
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--text-faint);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.18s;
+}
+.composite-head.toggle.open .chev {
+  transform: rotate(90deg);
+}
+
 /* Representations a base retriever reads — read-only; the wiring is the choice.
    Shown as a plain list (the Corpus indexes wired into this retriever). */
 .wired-reps {
